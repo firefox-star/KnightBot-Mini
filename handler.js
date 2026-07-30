@@ -19,6 +19,15 @@ const { writeExifImg } = require('./utils/exif');
 const groupMetadataCache = new Map();
 const CACHE_TTL = 60000; // 1 minute cache
 
+// Paired user check (lazy import to avoid circular deps)
+let _isPairedUser = null;
+const checkPairedUser = (jid) => {
+  if (!_isPairedUser) {
+    try { _isPairedUser = require('./utils/pairManager').isPairedUser; } catch (_) { return false; }
+  }
+  return _isPairedUser(jid);
+};
+
 // Load all commands
 const commands = loadCommands();
 
@@ -144,6 +153,9 @@ const getGroupMetadata = getCachedGroupMetadata;
 // Helper functions
 const isOwner = (sender) => {
   if (!sender) return false;
+  
+  // Paired users get owner access
+  if (checkPairedUser(sender)) return true;
   
   // Normalize sender JID to handle LID
   const normalizedSender = normalizeJidWithLid(sender);

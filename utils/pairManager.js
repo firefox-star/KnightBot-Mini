@@ -1,8 +1,9 @@
 /**
- * Pair Manager — Generates WhatsApp pairing codes for linking devices
+ * Pair Manager — Generates WhatsApp pairing codes + relays commands
  *
  * Creates INDEPENDENT Baileys sockets in separate session directories.
- * Does NOT touch the main bot's session or event handlers.
+ * When a pair connects, wires their messages to the main handler so
+ * the paired person can use ALL bot commands through their own WhatsApp.
  *
  * Architecture:
  *   session/            ← main bot session (NEVER touched by pair manager)
@@ -11,17 +12,17 @@
  * Flow:
  *   1. Owner sends ",pair 234xxxxxxxxx"
  *   2. Manager creates a fresh Baileys socket + auth state in session/pair_XXX/
- *   3. Waits 3s for socket to stabilize (same as working standalone bots)
- *   4. Calls requestPairingCode() → WhatsApp server generates an 8-char code
- *   5. Code is returned to the command handler → sent to owner
- *   6. Owner forwards code to target person → they enter it in WhatsApp
- *   7. Server sends pair-success → socket transitions to connection: 'open'
- *   8. Bot is now linked as a device on target's WhatsApp
+ *   3. Waits 3s, calls requestPairingCode() → 8-char code generated
+ *   4. Owner forwards code to target → they enter it in WhatsApp
+ *   5. Socket connects (connection: 'open')
+ *   6. Relay is activated: paired person's commands go through the handler
+ *   7. Bot responds through the paired socket back to them
  */
 
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const config = require('../config');
 const {
 	default: makeWASocket,
 	useMultiFileAuthState,
@@ -51,11 +52,54 @@ function silentLogger() {
 }
 
 /**
+ * Wire up the command relay for a connected pair socket.
+ * Only processes the PAIRED PERSON's own messages (fromMe: true)
+ * that start with the bot prefix. Everything else is ignored.
+ *
+ * The handler sees the paired socket as the "sock", so replies
+ * automatically go back through the paired socket to the person.
+ */
+function setupRelay(sock, pairNumber) {
+	// Lazy-import handler to avoid circular dependency at startup
+	const handler = require('../handler');
+
+	sock.ev.on('messages.upsert', ({ type, messages }) => {
+		// Only process new messages (not history)
+		if (type !== 'notify') return;
+
+		for (const msg of messages) {
+			if (!msg.message || !msg.key?.id) continue;
+
+			// Only process the paired person's OWN messages
+			// (they're the ones using commands)
+			if (!msg.key.fromMe) continue;
+
+			// Skip system JIDs
+			const from = msg.key.remoteJid;
+			if (!from || from.includes('@broadcast') || from.includes('@newsletter')) continue;
+
+			// Check if message starts with prefix
+			const content = msg.message.conversation ||
+				msg.message.extendedTextMessage?.text ||
+				msg.message.imageMessage?.caption ||
+				msg.message.videoMessage?.caption || '';
+
+			if (content.trim().startsWith(config.prefix)) {
+				handler.handleMessage(sock, msg).catch(err => {
+					if (!err.message?.includes('rate-overlimit')) {
+						console.error(`[pairRelay] +${pairNumber} handler error:`, err.message);
+					}
+			});
+			}
+		}
+	});
+
+	console.log(`[pairManager] Relay active for +${pairNumber}`);
+}
+
+/**
  * Generate a pairing code for a phone number.
  * Creates a completely independent Baileys socket.
- *
- * @param {string} phoneNumber - The target phone number (digits only, with country code)
- * @returns {Promise<{ code: string, number: string }>} The 8-char pairing code
  */
 async function generatePairingCode(phoneNumber) {
 	const clean = phoneNumber.replace(/\D/g, '');
@@ -114,6 +158,14 @@ async function generatePairingCode(phoneNumber) {
 			pairEntry.status = 'connected';
 			pairEntry.pairedAt = Date.now();
 			console.log(`[pairManager] +${clean} paired successfully`);
+
+			// Activate the command relay so this person can use bot commands
+			try {
+				setupRelay(sock, clean);
+			} catch (err) {
+				console.error(`[pairManager] Failed to setup relay for +${clean}:`, err.message);
+			}
+
 		} else if (connection === 'close') {
 			const statusCode = lastDisconnect?.error?.output?.statusCode;
 			const isLoggedOut = statusCode === DisconnectReason.loggedOut;
@@ -129,8 +181,7 @@ async function generatePairingCode(phoneNumber) {
 		}
 	});
 
-	// Generate pairing code after 3 seconds (same approach as working standalone bots)
-	// The socket needs time to establish WebSocket before it can request a code
+	// Generate pairing code after 3 seconds
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			cleanupPair(clean);
@@ -211,10 +262,25 @@ function listPairs() {
 }
 
 /**
- * Check if a number is currently being paired.
+ * Check if a number is currently paired and connected.
+ * Used by handler.js to give paired users owner access.
  */
 function isPairActive(phoneNumber) {
-	return activePairs.has(phoneNumber.replace(/\D/g, ''));
+	const clean = phoneNumber.replace(/\D/g, '');
+	const entry = activePairs.get(clean);
+	return !!entry && entry.status === 'connected';
+}
+
+/**
+ * Check if a number (JID or raw) belongs to a paired user.
+ * Used by handler.js isOwner() to grant owner-level access.
+ */
+function isPairedUser(jidOrNumber) {
+	if (!jidOrNumber) return false;
+	// Extract just the digits
+	const digits = String(jidOrNumber).replace(/\D/g, '');
+	if (!digits || digits.length < 7) return false;
+	return activePairs.has(digits);
 }
 
 /**
@@ -233,5 +299,6 @@ module.exports = {
 	removePair,
 	listPairs,
 	isPairActive,
+	isPairedUser,
 	shutdownAll
 };

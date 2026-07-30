@@ -1,161 +1,128 @@
 /**
- * Status Reactor v2 — Robust multi-strategy status reactor
+ * Status Reactor v3 — Standalone status viewer & reactor
  *
- * How it works:
- * 1. On connection open, sends `presence: available` to appear as an active
- *    WhatsApp Web client viewing the Status tab (this is what WA Web does).
- * 2. Periodically re-subscribes via IQ query to `status@broadcast`.
- * 3. Status messages pushed by WhatsApp arrive through `messages.upsert`
- *    and are caught by our listener — no type filter (accepts notify, append, etc).
- * 4. Each new (unseen) status is viewed and/or reacted to per config.
+ * COMPLETELY SEPARATE from autostatus config.
+ * This is a self-contained module that just works on its own.
  *
- * Key fix over v1: WA server only pushes status stories when the client
- * signals it is "active" via presence:available. Without this, the initial
- * buffered batch arrives but no new statuses are pushed afterwards.
+ * How it works (same as a working standalone bot):
+ * 1. Sends presence:available on connect so WA pushes status messages
+ * 2. Listens to ALL messages.upsert events (no type filter)
+ * 3. When a status@broadcast message arrives, views it and reacts
+ *
+ * Toggled via its own simple on/off state — no dependency on autostatus.
+ * The .autostatus command can still set emoji + delay, which this reads.
  */
 
-const { load } = require('./autostatus');
+const fs = require('fs');
+const path = require('path');
 
-const processed = new Set();
-let pollTimer = null;
-let isRunning = false;
-let presenceRestored = false;
+// ---- Own config file (separate from autostatus) ----
+const STATUS_CONFIG_FILE = path.join(__dirname, '..', 'database', 'statusview.json');
 
-// Clear processed set every 30 minutes to prevent unbounded memory growth
-setInterval(() => {
-	const size = processed.size;
-	processed.clear();
-	if (size > 0) console.log(`[statusReactor] Cleared ${size} processed IDs`);
-}, 30 * 60 * 1000);
+const defaults = {
+  enabled: true,    // ON by default — just works
+  view: true,       // view statuses by default
+  react: true,      // react to statuses by default
+  reaction: '\ud83d\udc9a',  // 💚
+  delay: 5          // seconds before reacting
+};
 
-// Poll every 15 seconds — aggressive enough to keep subscription alive
-const POLL_INTERVAL = 15_000;
-
-function initializeStatusReactor(sock) {
-	// ---- React to a single status message ----
-	const reactToStatus = (msg) => {
-		const from = msg.key?.remoteJid;
-		if (from !== 'status@broadcast') return;
-		if (msg.key.fromMe) return;
-
-		const sender = msg.key.participant;
-		if (!sender) return;
-
-		const msgId = msg.key.id;
-		if (!msgId || processed.has(msgId)) return;
-		processed.add(msgId);
-
-		// Load config fresh each time (owner may change settings at runtime)
-		let cfg;
-		try { cfg = load(); } catch (_) { return; }
-		if (!cfg.react && !cfg.view) return;
-
-		const delayMs = Math.max(0, Number(cfg.delay) || 5) * 1000;
-		const emoji = String(cfg.reaction || '\ud83d\udc9a');
-
-		setTimeout(async () => {
-			try {
-				// View (send read receipt)
-				if (cfg.view) {
-					try {
-						await sock.readMessages([{ key: msg.key }]);
-						console.log(`[statusReactor] Viewed ${sender.split('@')[0]}'s status`);
-					} catch (e) {
-						console.error(`[statusReactor] view error: ${e.message}`);
-					}
-				}
-
-				// React with emoji
-				if (cfg.react) {
-					try {
-						await sock.sendMessage(from, {
-							react: { text: emoji, key: msg.key }
-						});
-						console.log(`[statusReactor] Reacted to ${sender.split('@')[0]}'s status with ${emoji}`);
-					} catch (e) {
-						console.error(`[statusReactor] react error: ${e.message}`);
-					}
-				}
-			} catch (_) { /* no-op */ }
-		}, delayMs);
-	};
-
-	// ---- Strategy 1: Passive listener — catch ALL status pushes from WA ----
-	// NO type filter! Accept 'notify', 'append', or anything else.
-	// This is critical — the old version filtered by type and missed messages.
-	sock.ev.on('messages.upsert', ({ messages }) => {
-		for (const msg of messages) {
-			reactToStatus(msg);
-		}
-	});
-
-	// ---- Strategy 2: Active polling with presence + IQ subscription ----
-	const poll = async () => {
-		if (isRunning) return;
-		isRunning = true;
-
-		let cfg;
-		try { cfg = load(); } catch (_) { isRunning = false; return; }
-		if (!cfg.react && !cfg.view) {
-			isRunning = false;
-			return;
-		}
-
-		try {
-			// CRITICAL: Send presence 'available' before the IQ query.
-			// This mimics WhatsApp Web opening the Status tab and signals
-			// the server to push status story messages to this client.
-			// Without this, WA only sends the initial buffered batch then stops.
-			await sock.sendPresenceUpdate('available').catch(() => {});
-
-			// Small delay to let the presence update propagate
-			await new Promise(r => setTimeout(r, 500));
-
-			// Send IQ subscription to status@broadcast
-			await sock.sendNode({
-				tag: 'iq',
-				attrs: {
-					id: sock.generateMessageTag(),
-					to: 'status@broadcast',
-					xmlns: 'w:m',
-					type: 'get'
-				},
-				content: [
-					{
-						tag: 'list',
-						attrs: {},
-						content: []
-					}
-				]
-			});
-			console.log('[statusReactor] Poll sent (presence: available + IQ subscription)');
-		} catch (e) {
-			console.error(`[statusReactor] poll error: ${e.message}`);
-		}
-
-		isRunning = false;
-	};
-
-	// ---- Start / stop on connection changes ----
-	sock.ev.on('connection.update', ({ connection }) => {
-		if (connection === 'open') {
-			// Clean up any leftover timer (reconnect safety)
-			if (pollTimer) clearInterval(pollTimer);
-			presenceRestored = false;
-
-			// Wait 8s for the connection to fully stabilise, then start polling
-			console.log('[statusReactor] Connection open, starting in 8 seconds...');
-			setTimeout(poll, 8_000);
-			pollTimer = setInterval(poll, POLL_INTERVAL);
-		} else if (connection === 'close') {
-			if (pollTimer) {
-				clearInterval(pollTimer);
-				pollTimer = null;
-			}
-			isRunning = false;
-			presenceRestored = false;
-		}
-	});
+function loadConfig() {
+  try {
+    if (fs.existsSync(STATUS_CONFIG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(STATUS_CONFIG_FILE, 'utf8'));
+      return { ...defaults, ...data };
+    }
+  } catch (_) {}
+  return { ...defaults };
 }
 
-module.exports = { initializeStatusReactor };
+function saveConfig(cfg) {
+  try {
+    const dir = path.dirname(STATUS_CONFIG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(STATUS_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+// Export config functions so the command can use them
+module.exports.loadConfig = loadConfig;
+module.exports.saveConfig = saveConfig;
+
+// ---- Deduplication ----
+const processed = new Set();
+setInterval(() => processed.clear(), 30 * 60 * 1000);
+
+// ---- Reactor ----
+function initializeStatusReactor(sock) {
+  // React to a single status message
+  const handleStatus = (msg) => {
+    const from = msg.key?.remoteJid;
+    if (from !== 'status@broadcast') return;
+    if (msg.key.fromMe) return;
+
+    const sender = msg.key.participant;
+    if (!sender) return;
+
+    const msgId = msg.key.id;
+    if (!msgId || processed.has(msgId)) return;
+    processed.add(msgId);
+
+    const cfg = loadConfig();
+    if (!cfg.enabled) return;
+
+    const delayMs = Math.max(0, Number(cfg.delay) || 5) * 1000;
+    const emoji = String(cfg.reaction || '\ud83d\udc9a');
+
+    setTimeout(async () => {
+      try {
+        // View the status (send read receipt)
+        if (cfg.view) {
+          await sock.readMessages([msg.key]);
+          console.log(`[statusView] Viewed ${sender.split('@')[0]}'s status`);
+        }
+
+        // React to the status
+        if (cfg.react) {
+          await sock.sendMessage(
+            'status@broadcast',
+            { react: { text: emoji, key: msg.key } },
+            { statusJidList: [sender] }
+          );
+          console.log(`[statusView] Reacted ${emoji} to ${sender.split('@')[0]}'s status`);
+        }
+      } catch (e) {
+        console.error(`[statusView] error: ${e.message}`);
+      }
+    }, delayMs);
+  };
+
+  // ---- Listen for ALL message upserts (no type filter!) ----
+  // This is critical. The main handler filters by type === 'notify'
+  // and skips status@broadcast. We catch everything here.
+  sock.ev.on('messages.upsert', ({ messages }) => {
+    for (const msg of messages) {
+      handleStatus(msg);
+    }
+  });
+
+  // ---- On connection open, send presence:available ----
+  // This tells WhatsApp server we are active, so it pushes status
+  // stories to this client (same thing WhatsApp Web does).
+  sock.ev.on('connection.update', ({ connection }) => {
+    if (connection === 'open') {
+      console.log('[statusView] Connected, status viewer active');
+      // Send presence after a short delay for connection to stabilize
+      setTimeout(async () => {
+        try {
+          await sock.sendPresenceUpdate('available');
+          console.log('[statusView] Presence set to available');
+        } catch (e) {
+          console.error(`[statusView] presence error: ${e.message}`);
+        }
+      }, 3000);
+    }
+  });
+}
+
+module.exports.initializeStatusReactor = initializeStatusReactor;

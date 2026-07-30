@@ -5,17 +5,18 @@
  * Does NOT touch the main bot's session or event handlers.
  *
  * Architecture:
- *   sessions/           ← main bot session (NEVER touched by pair manager)
- *   sessions/pair_XXX/  ← each paired number gets its own isolated session
+ *   session/            ← main bot session (NEVER touched by pair manager)
+ *   session/pair_XXX/   ← each paired number gets its own isolated session
  *
  * Flow:
- *   1. Owner sends ".pair 234xxxxxxxxx"
- *   2. Manager creates a fresh Baileys socket + auth state in sessions/pair_XXX/
- *   3. Calls requestPairingCode() → WhatsApp server generates an 8-char code
- *   4. Code is returned to the command handler → sent to owner
- *   5. Owner forwards code to target person → they enter it in WhatsApp
- *   6. Server sends pair-success → socket transitions to connection: 'open'
- *   7. Bot is now linked as a device on target's WhatsApp
+ *   1. Owner sends ",pair 234xxxxxxxxx"
+ *   2. Manager creates a fresh Baileys socket + auth state in session/pair_XXX/
+ *   3. Waits 3s for socket to stabilize (same as working standalone bots)
+ *   4. Calls requestPairingCode() → WhatsApp server generates an 8-char code
+ *   5. Code is returned to the command handler → sent to owner
+ *   6. Owner forwards code to target person → they enter it in WhatsApp
+ *   7. Server sends pair-success → socket transitions to connection: 'open'
+ *   8. Bot is now linked as a device on target's WhatsApp
  */
 
 const pino = require('pino');
@@ -29,29 +30,24 @@ const {
 	fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// Active paired sessions: Map<"234xxx", { sock, state, saveCreds, status, pairedAt }>
+// Active paired sessions: Map<"234xxx", { sock, status, pairedAt }>
 const activePairs = new Map();
 
-// Base directory for pair sessions (sibling to main session)
-const PAIR_SESSIONS_DIR = path.join(__dirname, '..', 'sessions');
+// Base directory for pair sessions — inside the main session folder
+const PAIR_SESSIONS_DIR = path.join(__dirname, '..', 'session');
 
-// Ensure sessions directory exists
+// Ensure session directory exists
 if (!fs.existsSync(PAIR_SESSIONS_DIR)) {
 	fs.mkdirSync(PAIR_SESSIONS_DIR, { recursive: true });
 }
 
 /**
- * Create a silent logger for pair sockets (won't pollute main bot logs)
+ * Create a silent logger (won't pollute main bot logs)
  */
-function createPairLogger(number) {
+function silentLogger() {
 	const { Writable } = require('stream');
-	const silentStream = new Writable({
-		write(chunk, encoding, callback) {
-			// Discard all log output
-			callback();
-		}
-	});
-	return pino({ level: 'silent' }, silentStream);
+	const devNull = new Writable({ write(chunk, enc, cb) { cb(); } });
+	return pino({ level: 'silent' }, devNull);
 }
 
 /**
@@ -62,7 +58,6 @@ function createPairLogger(number) {
  * @returns {Promise<{ code: string, number: string }>} The 8-char pairing code
  */
 async function generatePairingCode(phoneNumber) {
-	// Validate number
 	const clean = phoneNumber.replace(/\D/g, '');
 	if (!clean || clean.length < 7 || clean.length > 15) {
 		throw new Error('Invalid phone number. Must be 7-15 digits with country code.');
@@ -72,24 +67,23 @@ async function generatePairingCode(phoneNumber) {
 	if (activePairs.has(clean)) {
 		const existing = activePairs.get(clean);
 		if (existing.status === 'pairing') {
-			throw new Error(`Pairing already in progress for +${clean}. Wait for it to complete or use .unpair ${clean} first.`);
+			throw new Error(`Pairing already in progress for +${clean}. Wait or use ,unpair ${clean} first.`);
 		}
 		if (existing.status === 'connected') {
-			throw new Error(`+${clean} is already paired and connected. Use .unpair ${clean} to remove.`);
+			throw new Error(`+${clean} is already paired. Use ,unpair ${clean} to remove.`);
 		}
 	}
 
 	const sessionDir = path.join(PAIR_SESSIONS_DIR, `pair_${clean}`);
-	const logger = createPairLogger(clean);
 
 	// Create isolated auth state for this pair
 	const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 	const { version } = await fetchLatestBaileysVersion();
 
-	// Create completely independent socket — no interaction with main bot
+	// Create completely independent socket
 	const sock = makeWASocket({
 		version,
-		logger,
+		logger: silentLogger(),
 		printQRInTerminal: false,
 		browser: Browsers.ubuntu('Chrome'),
 		auth: state,
@@ -105,8 +99,6 @@ async function generatePairingCode(phoneNumber) {
 	// Track this pair
 	const pairEntry = {
 		sock,
-		state,
-		saveCreds,
 		status: 'connecting',
 		number: clean,
 		createdAt: Date.now(),
@@ -114,7 +106,7 @@ async function generatePairingCode(phoneNumber) {
 	};
 	activePairs.set(clean, pairEntry);
 
-	// Handle connection lifecycle for this pair socket
+	// Handle connection lifecycle
 	sock.ev.on('connection.update', (update) => {
 		const { connection, lastDisconnect } = update;
 
@@ -127,53 +119,42 @@ async function generatePairingCode(phoneNumber) {
 			const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
 			if (isLoggedOut) {
-				console.log(`[pairManager] +${clean} logged out, removing session`);
+				console.log(`[pairManager] +${clean} logged out`);
 				activePairs.delete(clean);
-				// Clean up session files
-				try {
-					fs.rmSync(sessionDir, { recursive: true, force: true });
-				} catch (e) {
-					console.error(`[pairManager] Failed to cleanup session for +${clean}:`, e.message);
-				}
+				try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
 			} else {
 				pairEntry.status = 'disconnected';
-				console.log(`[pairManager] +${clean} disconnected (code: ${statusCode}), will not auto-reconnect`);
+				console.log(`[pairManager] +${clean} disconnected (code: ${statusCode})`);
 			}
 		}
 	});
 
-	// Wait for the socket to be ready, then request pairing code
-	const code = await new Promise((resolve, reject) => {
+	// Generate pairing code after 3 seconds (same approach as working standalone bots)
+	// The socket needs time to establish WebSocket before it can request a code
+	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			cleanupPair(clean);
-			reject(new Error('Timeout: Failed to generate pairing code in 30 seconds. Check your connection.'));
+			reject(new Error('Timeout: Failed to generate pairing code in 30s. Check connection.'));
 		}, 30_000);
 
-		sock.ev.on('connection.update', async (update) => {
-			if (update.connection === 'connecting') {
-				try {
-					pairEntry.status = 'pairing';
-					const pairingCode = await sock.requestPairingCode(clean);
-					clearTimeout(timeout);
-					console.log(`[pairManager] Pairing code generated for +${clean}: ${pairingCode}`);
-					resolve(pairingCode);
-				} catch (err) {
-					clearTimeout(timeout);
-					cleanupPair(clean);
-					reject(new Error(`Failed to request pairing code: ${err.message}`));
-				}
+		setTimeout(async () => {
+			try {
+				pairEntry.status = 'pairing';
+				const code = await sock.requestPairingCode(clean);
+				clearTimeout(timeout);
+				console.log(`[pairManager] Code for +${clean}: ${code}`);
+				resolve({ code, number: clean });
+			} catch (err) {
+				clearTimeout(timeout);
+				cleanupPair(clean);
+				reject(new Error(`Failed to request pairing code: ${err.message}`));
 			}
-		});
+		}, 3000);
 	});
-
-	return { code, number: clean };
 }
 
 /**
  * Remove a paired session cleanly.
- *
- * @param {string} phoneNumber - The phone number to unpair
- * @returns {{ success: boolean, message: string }}
  */
 function removePair(phoneNumber) {
 	const clean = phoneNumber.replace(/\D/g, '');
@@ -185,35 +166,7 @@ function removePair(phoneNumber) {
 	const entry = activePairs.get(clean);
 	const sessionDir = path.join(PAIR_SESSIONS_DIR, `pair_${clean}`);
 
-	// Close the socket gracefully
-	try {
-		entry.sock.end(new Error('Owner initiated unpair'));
-	} catch (_) {
-		// Socket might already be closed
-	}
-
-	// Remove from tracking
-	activePairs.delete(clean);
-
-	// Clean up session files
-	try {
-		if (fs.existsSync(sessionDir)) {
-			fs.rmSync(sessionDir, { recursive: true, force: true });
-		}
-	} catch (e) {
-		console.error(`[pairManager] Failed to cleanup session files for +${clean}:`, e.message);
-	}
-
-	console.log(`[pairManager] +${clean} unpaired and cleaned up`);
-	return { success: true, message: `+${clean} has been unpaired successfully.` };
-}
-
-/**
- * Internal: Clean up a pair entry without closing socket (for error cases)
- */
-function cleanupPair(phoneNumber) {
-	const clean = phoneNumber.replace(/\D/g, '');
-	const sessionDir = path.join(PAIR_SESSIONS_DIR, `pair_${clean}`);
+	try { entry.sock.end(new Error('Owner initiated unpair')); } catch (_) {}
 
 	activePairs.delete(clean);
 
@@ -222,12 +175,27 @@ function cleanupPair(phoneNumber) {
 			fs.rmSync(sessionDir, { recursive: true, force: true });
 		}
 	} catch (_) {}
+
+	console.log(`[pairManager] +${clean} unpaired`);
+	return { success: true, message: `+${clean} unpaired successfully.` };
 }
 
 /**
- * Get a formatted list of all active pairs.
- *
- * @returns {Array<{ number: string, status: string, pairedAt: string|null }>}
+ * Internal cleanup (for error cases)
+ */
+function cleanupPair(phoneNumber) {
+	const clean = phoneNumber.replace(/\D/g, '');
+	const sessionDir = path.join(PAIR_SESSIONS_DIR, `pair_${clean}`);
+	activePairs.delete(clean);
+	try {
+		if (fs.existsSync(sessionDir)) {
+			fs.rmSync(sessionDir, { recursive: true, force: true });
+		}
+	} catch (_) {}
+}
+
+/**
+ * List all active pairs.
  */
 function listPairs() {
 	const pairs = [];
@@ -243,23 +211,19 @@ function listPairs() {
 }
 
 /**
- * Check if a number is currently being paired or is already paired.
+ * Check if a number is currently being paired.
  */
 function isPairActive(phoneNumber) {
-	const clean = phoneNumber.replace(/\D/g, '');
-	return activePairs.has(clean);
+	return activePairs.has(phoneNumber.replace(/\D/g, ''));
 }
 
 /**
- * Clean up all pairs on bot shutdown.
- * Call this from a process event handler if desired.
+ * Shutdown all pairs.
  */
 function shutdownAll() {
-	console.log(`[pairManager] Shutting down ${activePairs.size} paired session(s)...`);
-	for (const [number, entry] of activePairs) {
-		try {
-			entry.sock.end(new Error('Bot shutting down'));
-		} catch (_) {}
+	console.log(`[pairManager] Shutting down ${activePairs.size} pair(s)...`);
+	for (const [, entry] of activePairs) {
+		try { entry.sock.end(new Error('Bot shutting down')); } catch (_) {}
 	}
 	activePairs.clear();
 }

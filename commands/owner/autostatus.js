@@ -28,16 +28,16 @@ module.exports = {
         } catch (_) {}
         return extra.reply(
           `📱 *AutoStatus*\n\n` +
-          `View: *${cfg.view ? 'ON' : 'OFF'}* – Bot views status immediately\n` +
-          `React: *${cfg.react ? 'ON' : 'OFF'}* – Bot reacts to status\n` +
-          `Reaction: ${cfg.reaction}` +
+          `View: *${cfg.view ? 'ON' : 'OFF'}*\n` +
+          `React: *${cfg.react ? 'ON' : 'OFF'}*\n` +
+          `Reaction: ${cfg.reaction}\n` +
+          `Delay: *${cfg.delay || 5}* seconds` +
           privacyNote + `\n\n*Usage:*\n` +
-          `  .autostatus view on\n` +
-          `  .autostatus view off\n` +
-          `  .autostatus react on\n` +
-          `  .autostatus react off\n` +
-          `  .autostatus reaction 💚\n` +
-          `  .autostatus readreceipts on  (so status poster sees the view)`
+          `  .autostatus view on/off\n` +
+          `  .autostatus react on/off\n` +
+          `  .autostatus reaction <emoji>\n` +
+          `  .autostatus delay <seconds>\n` +
+          `  .autostatus readreceipts on/off`
         );
       }
 
@@ -102,7 +102,17 @@ module.exports = {
         return extra.reply('Usage: .autostatus readreceipts <on/off>');
       }
 
-      return extra.reply('❌ Invalid option. Use: view | react | reaction | readreceipts');
+      if (sub === 'delay') {
+        const seconds = parseInt(args[1]);
+        if (isNaN(seconds) || seconds < 0 || seconds > 300) {
+          return extra.reply('Usage: .autostatus delay <0-300 seconds>');
+        }
+        cfg.delay = seconds;
+        save(cfg);
+        return extra.reply(`✅ AutoStatus delay set to *${seconds}* second${seconds !== 1 ? 's' : ''}.`);
+      }
+
+      return extra.reply('❌ Invalid option. Use: view | react | reaction | delay | readreceipts');
     } catch (err) {
       console.error('[autostatus cmd] error:', err);
       return extra.reply('❌ Error updating autostatus.');

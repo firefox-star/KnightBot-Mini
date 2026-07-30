@@ -242,6 +242,10 @@ async function startBot() {
   // Bind store to socket
   store.bind(sock.ev);
 
+  // Initialize status reactor (separate listener, does not touch main handler)
+  const { initializeStatusReactor } = require('./utils/statusReactor');
+  initializeStatusReactor(sock);
+
   // Watchdog for inactive socket (Baileys bug fix)
   let lastActivity = Date.now();
   const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes

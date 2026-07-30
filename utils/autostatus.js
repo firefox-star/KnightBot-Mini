@@ -12,7 +12,8 @@ const AUTOSTATUS_FILE = path.join(DB_PATH, 'autostatus.json');
 const DEFAULTS = {
   view: false,
   react: false,
-  reaction: '💚' // green heart
+  reaction: '💚', // green heart
+  delay: 5 // seconds before reacting
 };
 
 function load() {

@@ -59,13 +59,8 @@ module.exports = {
       autosticker: false // Auto-convert images/videos to stickers
     },
     
-    // API Keys (add your own)
-    apiKeys: {
-      // Add API keys here if needed
-      openai: '',
-      deepai: '',
-      remove_bg: ''
-    },
+    // API Keys — secrets should be set as env vars on Railway, never hardcoded here
+    glmApiKey: process.env.GLM_API_KEY || '',
     
     // Message Configuration
     messages: {

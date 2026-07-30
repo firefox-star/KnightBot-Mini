@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment variables (secrets)
+.env
+.env.*
+
+# Session data
+session/
+session/**/*
+
+# Database files (runtime data)
+database/
+database/**/*
+
+# Logs
+*.log
+logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp / build
+__pycache__/
+*.tmp

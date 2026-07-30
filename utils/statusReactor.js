@@ -1,25 +1,35 @@
 /**
- * Status Reactor — Polling-based status story reactor for Baileys v7
+ * Status Reactor v2 — Robust multi-strategy status reactor
  *
  * How it works:
- * 1. A periodic IQ query is sent to 'status@broadcast' (w:m xmlns).
- *    This mimics what WhatsApp Web does when you open the Status tab,
- *    telling the server to push new status story messages.
- * 2. Those pushed messages arrive through the normal messages.upsert
- *    event with remoteJid = 'status@broadcast' and participant = the poster.
- * 3. We react to each new (unseen) status with the configured emoji.
+ * 1. On connection open, sends `presence: available` to appear as an active
+ *    WhatsApp Web client viewing the Status tab (this is what WA Web does).
+ * 2. Periodically re-subscribes via IQ query to `status@broadcast`.
+ * 3. Status messages pushed by WhatsApp arrive through `messages.upsert`
+ *    and are caught by our listener — no type filter (accepts notify, append, etc).
+ * 4. Each new (unseen) status is viewed and/or reacted to per config.
+ *
+ * Key fix over v1: WA server only pushes status stories when the client
+ * signals it is "active" via presence:available. Without this, the initial
+ * buffered batch arrives but no new statuses are pushed afterwards.
  */
 
 const { load } = require('./autostatus');
 
 const processed = new Set();
 let pollTimer = null;
+let isRunning = false;
+let presenceRestored = false;
 
-// Clear processed set every 30 minutes to prevent memory growth
-setInterval(() => processed.clear(), 30 * 60 * 1000);
+// Clear processed set every 30 minutes to prevent unbounded memory growth
+setInterval(() => {
+	const size = processed.size;
+	processed.clear();
+	if (size > 0) console.log(`[statusReactor] Cleared ${size} processed IDs`);
+}, 30 * 60 * 1000);
 
-// How often (ms) we ping WhatsApp to keep status updates flowing
-const STATUS_POLL_INTERVAL = 30_000;
+// Poll every 15 seconds — aggressive enough to keep subscription alive
+const POLL_INTERVAL = 15_000;
 
 function initializeStatusReactor(sock) {
 	// ---- React to a single status message ----
@@ -70,23 +80,38 @@ function initializeStatusReactor(sock) {
 		}, delayMs);
 	};
 
-	// ---- Passive listener: catches whatever WhatsApp pushes ----
-	sock.ev.on('messages.upsert', ({ messages, type }) => {
-		// Accept both 'notify' (live) and 'append' (buffered/catch-up)
-		if (type !== 'notify' && type !== 'append') return;
+	// ---- Strategy 1: Passive listener — catch ALL status pushes from WA ----
+	// NO type filter! Accept 'notify', 'append', or anything else.
+	// This is critical — the old version filtered by type and missed messages.
+	sock.ev.on('messages.upsert', ({ messages }) => {
 		for (const msg of messages) {
 			reactToStatus(msg);
 		}
 	});
 
-	// ---- Active polling: keep status subscription alive ----
-	const sendStatusQuery = async () => {
-		// Only poll when feature is enabled
+	// ---- Strategy 2: Active polling with presence + IQ subscription ----
+	const poll = async () => {
+		if (isRunning) return;
+		isRunning = true;
+
 		let cfg;
-		try { cfg = load(); } catch (_) { return; }
-		if (!cfg.react && !cfg.view) return;
+		try { cfg = load(); } catch (_) { isRunning = false; return; }
+		if (!cfg.react && !cfg.view) {
+			isRunning = false;
+			return;
+		}
 
 		try {
+			// CRITICAL: Send presence 'available' before the IQ query.
+			// This mimics WhatsApp Web opening the Status tab and signals
+			// the server to push status story messages to this client.
+			// Without this, WA only sends the initial buffered batch then stops.
+			await sock.sendPresenceUpdate('available').catch(() => {});
+
+			// Small delay to let the presence update propagate
+			await new Promise(r => setTimeout(r, 500));
+
+			// Send IQ subscription to status@broadcast
 			await sock.sendNode({
 				tag: 'iq',
 				attrs: {
@@ -103,24 +128,32 @@ function initializeStatusReactor(sock) {
 					}
 				]
 			});
+			console.log('[statusReactor] Poll sent (presence: available + IQ subscription)');
 		} catch (e) {
 			console.error(`[statusReactor] poll error: ${e.message}`);
 		}
+
+		isRunning = false;
 	};
 
-	// Start / stop polling on connection changes
+	// ---- Start / stop on connection changes ----
 	sock.ev.on('connection.update', ({ connection }) => {
 		if (connection === 'open') {
 			// Clean up any leftover timer (reconnect safety)
 			if (pollTimer) clearInterval(pollTimer);
-			// Wait 10 s for the connection to fully stabilise, then poll
-			setTimeout(sendStatusQuery, 10_000);
-			pollTimer = setInterval(sendStatusQuery, STATUS_POLL_INTERVAL);
+			presenceRestored = false;
+
+			// Wait 8s for the connection to fully stabilise, then start polling
+			console.log('[statusReactor] Connection open, starting in 8 seconds...');
+			setTimeout(poll, 8_000);
+			pollTimer = setInterval(poll, POLL_INTERVAL);
 		} else if (connection === 'close') {
 			if (pollTimer) {
 				clearInterval(pollTimer);
 				pollTimer = null;
 			}
+			isRunning = false;
+			presenceRestored = false;
 		}
 	});
 }

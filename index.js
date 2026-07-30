@@ -246,6 +246,10 @@ async function startBot() {
   const { initializeStatusReactor } = require('./utils/statusReactor');
   initializeStatusReactor(sock);
 
+  // Initialize chat history (for AI features like ,cc)
+  const { initialize: initChatHistory } = require('./utils/chatHistory');
+  initChatHistory(sock);
+
   // Watchdog for inactive socket (Baileys bug fix)
   let lastActivity = Date.now();
   const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes

@@ -1,23 +1,11 @@
-/**
- * Chat Continuer — AI-powered reply suggestions
- *
- * Usage:
- *   ,cc          → 5 reply suggestions sent to your bot DM
- *   ,v f/c/d/s/a  → set vibe (flirty/casual/deep/sarcastic/auto)
- *
- * Reads recent chat history, sends to GLM AI,
- * delivers 5 options to your private chat with the bot.
- */
-
 const { chat: glmChat } = require('../../utils/glmApi');
-const { getHistory } = require('../../utils/chatHistory');
 const fs = require('fs');
 const path = require('path');
 
 const VIBE_FILE = path.join(__dirname, '../../database/vibe.json');
 
 // Cooldown: prevent spamming ,cc in the same chat within 15 seconds
-const _cooldowns = new Map(); // chatJid -> timestamp
+const _cooldowns = new Map();
 const COOLDOWN_MS = 15000;
 
 function loadVibes() {
@@ -34,6 +22,19 @@ const VIBE_MAP = {
 	s: 'sarcastic and funny',
 	a: 'auto'
 };
+
+/**
+ * Extract text from a Baileys message object
+ */
+function extractText(msg) {
+	if (!msg?.message) return '';
+	const m = msg.message;
+	if (m.conversation) return m.conversation;
+	if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
+	if (m.imageMessage?.caption) return m.imageMessage.caption;
+	if (m.videoMessage?.caption) return m.videoMessage.caption;
+	return '';
+}
 
 module.exports = {
 	name: 'cc',
@@ -56,15 +57,34 @@ module.exports = {
 		}
 		_cooldowns.set(chatJid, now);
 
-		// Check history
-		const history = getHistory(chatJid);
-		if (history.length < 2) {
-			return extra.reply('❌ Not enough chat history yet. Chat more first.');
-		}
-
 		// Check API key
 		if (!process.env.GLM_API_KEY) {
 			return extra.reply('❌ GLM_API_KEY not set. Add it in Railway env vars.');
+		}
+
+		// Build history from the main store (works with messages since bot started)
+		const { store } = require('../../index');
+		const chatMsgs = store.messages.get(chatJid);
+		const recentRaw = chatMsgs
+			? Array.from(chatMsgs.values())
+				.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0))
+				.slice(-20)
+		: [];
+
+		if (recentRaw.length < 2) {
+			return extra.reply('❌ Not enough messages captured yet. Send a few more messages in this chat, then try ,cc again. (Only messages since bot started are available)');
+		}
+
+		// Extract text entries, skip empty and bot command messages
+		const recent = recentRaw
+			.map(m => ({
+				sender: m.key.fromMe ? 'Me' : 'Them',
+				text: extractText(m)
+			}))
+			.filter(e => e.text.trim().length > 0);
+
+		if (recent.length < 2) {
+			return extra.reply('❌ Not enough text messages in recent chat. Try in a chat with more text conversation.');
 		}
 
 		// Get vibe setting
@@ -73,9 +93,8 @@ module.exports = {
 		const vibeLabel = VIBE_MAP[vibeKey] || 'auto';
 
 		// Build chat context for AI
-		const recent = history.slice(-15);
 		const chatText = recent.map(m =>
-			`${m.sender === 'me' ? 'Me' : 'Them'}: ${m.text}`
+			`${m.sender}: ${m.text}`
 		).join('\n');
 
 		// Vibe instruction
@@ -102,9 +121,9 @@ module.exports = {
 				{ role: 'user', content: prompt }
 			]);
 
-			// Build a clean display of the chat + options
+			// Build a clean preview of last 4 messages
 			const chatPreview = recent.slice(-4).map(m =>
-				`${m.sender === 'me' ? 'Me' : 'Them'}: ${m.text}`
+				`${m.sender}: ${m.text}`
 			).join('\n');
 
 			await sock.sendMessage(ownerJid, {
@@ -135,7 +154,6 @@ ${response}
 				react: { text: '❌', key: msg.key }
 			}).catch(() => {});
 
-			// Send friendly error to DM
 			try {
 				await sock.sendMessage(ownerJid, {
 					text: `❌ CC Error: ${err.message}`

@@ -86,7 +86,7 @@ function cleanupPuppeteerCache() {
 // Optimized in-memory store with hard limits (Map-based for better memory management)
 const store = {
   messages: new Map(), // Use Map instead of plain object
-  maxPerChat: 20, // Limit to 20 messages per chat
+  maxPerChat: 50, // Limit to 50 messages per chat (used by ,cc and other features)
 
   bind: (ev) => {
     ev.on('messages.upsert', ({ messages }) => {

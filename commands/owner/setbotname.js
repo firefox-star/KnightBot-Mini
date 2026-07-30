@@ -12,7 +12,7 @@ module.exports = {
   category: 'owner',
   description: 'Change bot name',
   usage: '.setbotname <new name> or reply to a message with .setbotname',
-  ownerOnly: true,
+  ownerOnly: false,
   
   async execute(sock, msg, args, extra) {
     try {

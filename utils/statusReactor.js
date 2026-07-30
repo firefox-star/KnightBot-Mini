@@ -1,87 +1,67 @@
-/**
- * Status Reactor - Listens for WhatsApp status updates and reacts/views them
- * Completely isolated from the main message handler.
- * Only activates when autostatus is enabled by the owner.
- */
-
 const { load } = require('./autostatus');
 
-// Dedup set — prevents reacting to the same status twice
-const processedStatuses = new Set();
+const processed = new Set();
 
-// Clear every 30 minutes to prevent memory growth
-setInterval(() => {
-  processedStatuses.clear();
-}, 30 * 60 * 1000);
+// Clear every 30 min
+setInterval(() => processed.clear(), 30 * 60 * 1000);
 
 function initializeStatusReactor(sock) {
-  // Baileys allows multiple listeners on the same event.
-  // This listener ONLY cares about status@broadcast messages.
-  // The main handler in index.js already filters those out via isSystemJid(),
-  // so there is zero overlap or conflict.
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    // Only new messages
-    if (type !== 'notify') return;
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
+    // Accept both 'notify' (live) and 'append' (offline/catch-up)
+    if (type !== 'notify' && type !== 'append') return;
 
-    try {
-      const cfg = load();
+    for (const msg of messages) {
+      const from = msg.key?.remoteJid;
+      // status@broadcast is the JID WhatsApp uses for all status messages
+      if (!from || from !== 'status@broadcast') continue;
 
-      // Nothing to do if both view and react are off
-      if (!cfg.view && !cfg.react) return;
+      // Skip bot's own statuses
+      if (msg.key.fromMe) continue;
 
-      for (const msg of messages) {
-        const from = msg.key.remoteJid;
+      // participant = the person who posted the status
+      const sender = msg.key.participant;
+      if (!sender) continue;
 
-        // Only status broadcast messages
-        if (!from || !from.includes('status@broadcast')) continue;
+      const msgId = msg.key.id;
+      if (!msgId || processed.has(msgId)) continue;
+      processed.add(msgId);
 
-        // Skip own statuses
-        if (msg.key.fromMe) continue;
+      // Load config fresh each time
+      let cfg;
+      try { cfg = load(); } catch (_) { continue; }
+      if (!cfg.react && !cfg.view) continue;
 
-        // Need the actual poster's JID
-        const sender = msg.key.participant;
-        if (!sender) continue;
+      const delayMs = Math.max(0, Number(cfg.delay) || 5) * 1000;
+      const emoji = String(cfg.reaction || '💚');
+      const shouldView = !!cfg.view;
+      const shouldReact = !!cfg.react;
 
-        // Dedup
-        const msgId = msg.key.id;
-        if (!msgId || processedStatuses.has(msgId)) continue;
-        processedStatuses.add(msgId);
-
-        // Fire-and-forget with delay — doesn't block other messages
-        const delayMs = Math.max(0, (cfg.delay || 5)) * 1000;
-
-        setTimeout(async () => {
-          try {
-            // View status (send read receipt)
-            if (cfg.view) {
-              try {
-                await sock.readMessages([msg.key]);
-              } catch (_) {
-                // Read receipt can fail silently
-              }
+      // Fire-and-forget with delay
+      setTimeout(async () => {
+        try {
+          // View (send read receipt)
+          if (shouldView) {
+            try {
+              await sock.readMessages([{ key: msg.key }]);
+              console.log(`[statusReactor] Viewed ${sender.split('@')[0]}'s status`);
+            } catch (e) {
+              console.error(`[statusReactor] view error: ${e.message}`);
             }
-
-            // React to status
-            if (cfg.react && cfg.reaction) {
-              try {
-                await sock.sendMessage(from, {
-                  react: {
-                    text: cfg.reaction,
-                    key: msg.key
-                  }
-                });
-                console.log(`[statusReactor] Reacted to ${sender.split('@')[0]}'s status with ${cfg.reaction}`);
-              } catch (e) {
-                console.error('[statusReactor] react error:', e.message);
-              }
-            }
-          } catch (_) {
-            // Never let a delayed reaction error bubble up
           }
-        }, delayMs);
-      }
-    } catch (e) {
-      console.error('[statusReactor] error:', e.message);
+
+          // React
+          if (shouldReact) {
+            try {
+              await sock.sendMessage(from, {
+                react: { text: emoji, key: msg.key }
+              });
+              console.log(`[statusReactor] Reacted to ${sender.split('@')[0]}'s status with ${emoji}`);
+            } catch (e) {
+              console.error(`[statusReactor] react error: ${e.message}`);
+            }
+          }
+        } catch (_) {}
+      }, delayMs);
     }
   });
 }

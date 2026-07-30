@@ -4,8 +4,8 @@
 
 module.exports = {
     // Bot Owner Configuration
-    ownerNumber: ['9876543210'], // Add your number without + or spaces (e.g., 919876543210)
-    ownerName: ['Knight Bot'], // Owner names corresponding to ownerNumber array
+    ownerNumber: ['2347070818332'], // Add your number without + or spaces (e.g., 919876543210)
+    ownerName: ['berlin👹👹'], // Owner names corresponding to ownerNumber array
     
     // Bot Configuration
     botName: 'Knight Bot Mini',
@@ -35,7 +35,7 @@ module.exports = {
       antitag: false,
       antitagAction: 'delete',
       antiall: false, // Owner only - blocks all messages from non-admins
-      antiviewonce: false,
+      antiviewonce: true,
       antibot: false,
       antibotAction: 'warn', // 'warn' | 'kick'
       anticall: false, // Anti-call feature

@@ -15,8 +15,11 @@ module.exports = {
     try {
       const chatId = msg.key.remoteJid;
       
-      // Show typing indicator
-      await sock.sendPresenceUpdate('composing', chatId);
+      // Show typing indicator (skip in ghost mode)
+      const { isGhostMode } = require('../owner/ghost');
+      if (!isGhostMode()) {
+        await sock.sendPresenceUpdate('composing', chatId);
+      }
       
       let textToTranslate = '';
       let lang = '';

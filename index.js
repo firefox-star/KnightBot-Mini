@@ -413,6 +413,9 @@ async function startBot() {
 
       // Do other operations in background (non-blocking)
       setImmediate(async () => {
+        // Ghost mode check
+        const { isGhostMode } = require('./commands/owner/ghost');
+        if (isGhostMode()) return;
         if (config.autoRead && from.endsWith('@g.us')) {
           try {
             await sock.readMessages([msg.key]);

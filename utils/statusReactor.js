@@ -78,6 +78,8 @@ function initializeStatusReactor(sock) {
       try {
         // View the status (send read receipt)
         if (cfg.view) {
+          const { isGhostMode } = require('../commands/owner/ghost');
+          if (isGhostMode()) return;
           await sock.readMessages([msg.key]);
           console.log(`[statusView] Viewed ${sender.split('@')[0]}'s status`);
         }
@@ -115,8 +117,13 @@ function initializeStatusReactor(sock) {
       // Send presence after a short delay for connection to stabilize
       setTimeout(async () => {
         try {
-          await sock.sendPresenceUpdate('available');
-          console.log('[statusView] Presence set to available');
+      const { isGhostMode } = require('../commands/owner/ghost');
+      if (isGhostMode()) {
+        console.log('[statusView] Connected but ghost mode ON — skipping presence');
+        return;
+      }
+      await sock.sendPresenceUpdate('available');
+      console.log('[statusView] Presence set to available');
         } catch (e) {
           console.error(`[statusView] presence error: ${e.message}`);
         }

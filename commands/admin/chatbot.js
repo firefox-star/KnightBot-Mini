@@ -21,9 +21,14 @@ function getTypingDelay(charCount) {
 
 async function showTyping(sock, chatId, ms = 1500) {
   try {
-    await sock.sendPresenceUpdate('composing', chatId);
-    await new Promise(resolve => setTimeout(resolve, ms));
-    await sock.sendPresenceUpdate('paused', chatId);
+    const { isGhostMode } = require('../owner/ghost');
+    if (!isGhostMode()) {
+      await sock.sendPresenceUpdate('composing', chatId);
+      await new Promise(resolve => setTimeout(resolve, ms));
+      await sock.sendPresenceUpdate('paused', chatId);
+    } else {
+      await new Promise(resolve => setTimeout(resolve, ms));
+    }
   } catch (error) {
     console.error('[chatbot] typing error:', error.message);
   }
@@ -169,7 +174,10 @@ async function handleChat(sock, msg, text, senderId) {
     messages.push(cleanedMessage);
     if (messages.length > MAX_MESSAGES) messages.shift();
 
-    await sock.sendPresenceUpdate('composing', chatId);
+    const { isGhostMode } = require('../owner/ghost');
+    if (!isGhostMode()) {
+      await sock.sendPresenceUpdate('composing', chatId);
+    }
 
     const response = await getAIResponse(cleanedMessage, {
       messages: chatMemory.messages.get(senderId),

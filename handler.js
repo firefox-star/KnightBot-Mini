@@ -19,6 +19,15 @@ const { writeExifImg } = require('./utils/exif');
 const groupMetadataCache = new Map();
 const CACHE_TTL = 60000; // 1 minute cache
 
+// Ghost mode check (lazy import to avoid circular deps)
+let _isGhostModeCheck = null;
+const isGhostModeCheck = () => {
+  if (!_isGhostModeCheck) {
+    try { _isGhostModeCheck = require('./commands/owner/ghost').isGhostMode; } catch (_) { return false; }
+  }
+  return _isGhostModeCheck();
+};
+
 // Paired user check (lazy import to avoid circular deps)
 let _isPairedUser = null;
 const checkPairedUser = (jid) => {
@@ -976,8 +985,8 @@ const handleMessage = async (sock, msg) => {
       }
     }
     
-    // Auto-typing
-    if (config.autoTyping) {
+    // Auto-typing (skip in ghost mode)
+    if (config.autoTyping && !isGhostModeCheck()) {
       await sock.sendPresenceUpdate('composing', from);
     }
     

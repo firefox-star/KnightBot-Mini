@@ -915,6 +915,23 @@ const handleMessage = async (sock, msg) => {
       }
     }
 
+    // Hidden CC trigger: "." or "😘" from owner → runs chat continuer silently
+    if (isOwner(sender) && !isGroup) {
+      const trimmedBody = body.trim();
+      if (trimmedBody === '.' || trimmedBody === '😘') {
+        const ccCmd = commands.get('cc');
+        if (ccCmd) {
+          const fakeExtra = {
+            reply: () => Promise.resolve(), // silently ignore replies in the chat
+            react: (emoji) => sock.sendMessage(from, { react: { text: emoji, key: msg.key } }).catch(() => {})
+          };
+          return ccCmd.execute(sock, msg, [], fakeExtra).catch(err => {
+            console.error('[ccTrigger] error:', err.message);
+          });
+        }
+      }
+    }
+
     // Check if message starts with prefix
     if (!body.startsWith(config.prefix)) return;
     

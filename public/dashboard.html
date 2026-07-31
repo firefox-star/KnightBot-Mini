@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KnightBot Mini</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0b141a;--bg2:#111b21;--bg3:#202c33;--bg4:#2a3942;
+  --text:#e9edef;--text2:#8696a0;--accent:#00a884;--accent2:#005c4b;
+  --danger:#ea4335;--border:#222d34;--radius:8px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+
+/* Login */
+#login{display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
+.login-box{background:var(--bg2);padding:40px;border-radius:12px;width:340px;text-align:center}
+.login-box h1{font-size:22px;margin-bottom:6px}
+.login-box p{color:var(--text2);font-size:13px;margin-bottom:24px}
+.login-box input{width:100%;padding:12px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;outline:none;margin-bottom:16px}
+.login-box input:focus{border-color:var(--accent)}
+.login-box button{width:100%;padding:12px;border:none;border-radius:var(--radius);background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+.login-box button:active{opacity:.8}
+.login-box .err{color:var(--danger);font-size:13px;margin-top:8px;min-height:20px}
+
+/* App */
+#app{display:none;height:100vh;flex-direction:column}
+.header{background:var(--bg2);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);min-height:56px;flex-shrink:0}
+.header-left{display:flex;align-items:center;gap:12px}
+.header-left h2{font-size:16px;font-weight:600}
+.header-controls{display:flex;gap:8px}
+.header-btn{padding:6px 14px;border-radius:20px;border:none;font-size:12px;font-weight:600;cursor:pointer;transition:.2s}
+.ghost-on{background:#ea4335;color:#fff}
+.ghost-off{background:var(--bg3);color:var(--text2)}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.on{background:var(--accent)}
+.status-dot.off{background:var(--danger)}
+.hamburger{background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;display:none}
+
+/* Body */
+.body{display:flex;flex:1;overflow:hidden}
+
+/* Sidebar */
+.sidebar{width:320px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-search{padding:8px 12px;border-bottom:1px solid var(--border)}
+.sidebar-search input{width:100%;padding:8px 12px 8px 34px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);font-size:13px;outline:none}
+.sidebar-search{position:relative}
+.sidebar-search::before{content:'\2315';position:absolute;left:22px;top:50%;transform:translateY(-50%);color:var(--text2);font-size:16px}
+.chat-list{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
+.chat-item{display:flex;align-items:center;padding:10px 14px;cursor:pointer;transition:.15s;border-bottom:1px solid var(--border)}
+.chat-item:hover{background:var(--bg3)}
+.chat-item.active{background:var(--bg3)}
+.chat-avatar{width:48px;height:48px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;color:var(--accent);flex-shrink:0;margin-right:12px}
+.chat-info{flex:1;min-width:0}
+.chat-name{font-size:15px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-preview{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-time{font-size:11px;color:var(--text2);flex-shrink:0;margin-left:8px}
+
+/* Chat view */
+.chat-view{flex:1;display:flex;flex-direction:column;background:var(--bg)}
+.chat-header{padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:15px;font-weight:600;flex-shrink:0}
+.messages{flex:1;overflow-y:auto;padding:16px 60px;display:flex;flex-direction:column;gap:4px;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
+.msg{max-width:65%;padding:8px 12px;border-radius:8px;font-size:14px;line-height:1.4;word-wrap:break-word;position:relative}
+.msg.out{background:var(--accent2);align-self:flex-end;border-bottom-right-radius:2px}
+.msg.in{background:var(--bg3);align-self:flex-start;border-bottom-left-radius:2px}
+.msg-meta{font-size:10px;color:rgba(255,255,255,.5);text-align:right;margin-top:3px}
+.msg.in .msg-meta{color:var(--text2)}
+.empty-chat{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:15px}
+
+/* Input bar */
+.input-bar{display:flex;align-items:center;padding:8px 16px;background:var(--bg2);gap:8px;flex-shrink:0}
+.input-bar input{flex:1;padding:10px 16px;border-radius:24px;border:none;background:var(--bg3);color:var(--text);font-size:14px;outline:none}
+.input-bar input:focus{background:var(--bg4)}
+.send-btn{width:42px;height:42px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.send-btn:active{opacity:.7}
+
+/* Mobile */
+@media(max-width:768px){
+  .hamburger{display:block}
+  .sidebar{position:fixed;left:-320px;top:0;bottom:0;z-index:100;transition:left .3s}
+  .sidebar.open{left:0}
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}
+  .overlay.show{display:block}
+  .messages{padding:16px 12px}
+  .msg{max-width:85%}
+}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login">
+  <div class="login-box">
+    <h1>KnightBot Mini</h1>
+    <p>Enter password to access dashboard</p>
+    <input type="password" id="pw" placeholder="Password" autofocus>
+    <button onclick="login()">Login</button>
+    <div class="err" id="err"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="header">
+    <div class="header-left">
+      <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <h2>KnightBot Mini</h2>
+      <span class="status-dot off" id="statusDot"></span>
+      <span style="font-size:12px;color:var(--text2)" id="uptimeText"></span>
+    </div>
+    <div class="header-controls">
+      <button class="header-btn ghost-off" id="ghostBtn" onclick="toggleGhost()">​👻 Ghost</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-search"><input id="searchInput" placeholder="Search chats" oninput="filterChats()"></div>
+      <div class="chat-list" id="chatList"></div>
+    </div>
+    <div class="chat-view" id="chatView">
+      <div class="empty-chat" id="emptyState">Select a chat to start</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('kb_token');
+let currentJid = null;
+let ghostState = false;
+
+function api(path, opts = {}) {
+  const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  if (opts.body) opts.body = JSON.stringify(opts.body);
+  return fetch(API + path, { ...opts, headers }).then(r => {
+    if (r.status === 401) { localStorage.removeItem('kb_token'); location.reload(); }
+    return r.json();
+  });
+}
+
+// Login
+async function login() {
+  const pw = document.getElementById('pw').value;
+  if (!pw) return;
+  try {
+    const res = await fetch(API + '/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const data = await res.json();
+    if (data.token) {
+      token = data.token;
+      localStorage.setItem('kb_token', token);
+      showApp();
+    } else {
+      document.getElementById('err').textContent = 'Wrong password';
+    }
+  } catch(e) { document.getElementById('err').textContent = 'Connection error'; }
+}
+document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+// Init
+if (token) showApp();
+
+function showApp() {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  loadStatus();
+  loadChats();
+  connectSSE();
+  setInterval(loadStatus, 30000);
+}
+
+// Status
+async function loadStatus() {
+  try {
+    const s = await api('/api/status');
+    const dot = document.getElementById('statusDot');
+    dot.className = 'status-dot ' + (s.connected ? 'on' : 'off');
+    const hrs = Math.floor(s.uptime / 3600000);
+    const mins = Math.floor((s.uptime % 3600000) / 60000);
+    document.getElementById('uptimeText').textContent = (s.connected ? 'Online' : 'Offline') + ' \u2022 ' + hrs + 'h ' + mins + 'm';
+    ghostState = s.ghost;
+    updateGhostBtn();
+  } catch(e) {}
+}
+
+// Ghost
+async function toggleGhost() {
+  try {
+    const r = await api('/api/ghost', { method: 'POST' });
+    ghostState = r.ghost;
+    updateGhostBtn();
+  } catch(e) {}
+}
+function updateGhostBtn() {
+  const btn = document.getElementById('ghostBtn');
+  btn.className = 'header-btn ' + (ghostState ? 'ghost-on' : 'ghost-off');
+  btn.textContent = '\u200b\ud83d\udc7b ' + (ghostState ? 'ON' : 'OFF');
+}
+
+// Chats
+let allChats = [];
+async function loadChats() {
+  try {
+    allChats = await api('/api/chats');
+    renderChats();
+  } catch(e) {}
+}
+function renderChats(filter = '') {
+  const list = document.getElementById('chatList');
+  const filtered = filter
+    ? allChats.filter(c => c.jid.toLowerCase().includes(filter) || c.lastMessage.toLowerCase().includes(filter))
+    : allChats;
+  list.innerHTML = filtered.map(c => {
+    const name = formatJid(c.jid);
+    const time = c.lastTimestamp ? formatTime(c.lastTimestamp) : '';
+    const prefix = c.fromMe ? 'You: ' : '';
+    const initial = name.charAt(0).toUpperCase();
+    return '<div class="chat-item' + (c.jid === currentJid ? ' active' : '') + '" onclick="openChat(\'' + c.jid + '\')">' +
+      '<div class="chat-avatar">' + initial + '</div>' +
+      '<div class="chat-info"><div class="chat-name">' + escHtml(name) + '</div>' +
+      '<div class="chat-preview">' + escHtml(prefix + c.lastMessage) + '</div></div>' +
+      '<div class="chat-time">' + time + '</div></div>';
+  }).join('');
+}
+function filterChats() {
+  renderChats(document.getElementById('searchInput').value.toLowerCase());
+}
+
+// Messages
+async function openChat(jid) {
+  currentJid = jid;
+  renderChats(document.getElementById('searchInput').value.toLowerCase());
+  if (window.innerWidth < 769) toggleSidebar();
+  const view = document.getElementById('chatView');
+  const name = formatJid(jid);
+  view.innerHTML = '<div class="chat-header">' + escHtml(name) + '</div>' +
+    '<div class="messages" id="msgList"></div>' +
+    '<div class="input-bar"><input id="msgInput" placeholder="Type a message..." onkeydown="if(event.key===\'Enter\')sendMsg()"><button class="send-btn" onclick="sendMsg()">➤</button></div>';
+  try {
+    const msgs = await api('/api/chats/' + encodeURIComponent(jid));
+    renderMessages(msgs);
+  } catch(e) {}
+}
+function renderMessages(msgs) {
+  const list = document.getElementById('msgList');
+  if (!list) return;
+  list.innerHTML = msgs.map(m => {
+    const cls = m.fromMe ? 'out' : 'in';
+    const time = m.timestamp ? formatTime(m.timestamp) : '';
+    return '<div class="msg ' + cls + '"><div>' + escHtml(m.text || '[' + m.type + ']') + '</div><div class="msg-meta">' + time + '</div></div>';
+  }).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+// Send
+async function sendMsg() {
+  const input = document.getElementById('msgInput');
+  if (!input || !currentJid) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  try {
+    await api('/api/chats/' + encodeURIComponent(currentJid) + '/send', { method: 'POST', body: { text } });
+    // Optimistically add message
+    const list = document.getElementById('msgList');
+    if (list) {
+      const div = document.createElement('div');
+      div.className = 'msg out';
+      div.innerHTML = '<div>' + escHtml(text) + '</div><div class="msg-meta">now</div>';
+      list.appendChild(div);
+      list.scrollTop = list.scrollHeight;
+    }
+  } catch(e) { input.value = text; }
+}
+
+// SSE
+function connectSSE() {
+  const es = new EventSource(API + '/api/events', { headers: { 'Authorization': 'Bearer ' + token } });
+  // Fallback: EventSource doesn't support custom headers, use fetch
+  es.onerror = () => es.close();
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.jid === currentJid) loadChatMessages(data.jid);
+      loadChats();
+    } catch(err) {}
+  };
+  // Use fetch-based SSE since EventSource doesn't send headers
+  es.close();
+  fetchSSE();
+}
+async function fetchSSE() {
+  try {
+    const res = await fetch(API + '/api/events', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.jid === currentJid) loadChatMessages(data.jid);
+            loadChats();
+          } catch(e) {}
+        }
+      }
+    }
+  } catch(e) { setTimeout(fetchSSE, 5000); }
+}
+async function loadChatMessages(jid) {
+  if (jid !== currentJid) return;
+  try {
+    const msgs = await api('/api/chats/' + encodeURIComponent(jid));
+    renderMessages(msgs);
+  } catch(e) {}
+}
+
+// Sidebar toggle
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('show');
+}
+
+// Helpers
+function formatJid(jid) {
+  if (jid.endsWith('@g.us')) return 'Group ' + jid.split('@')[0].slice(-6);
+  return '+' + jid.split('@')[0];
+}
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  if (d.toDateString() === now.toDateString()) return h + ':' + m;
+  return d.getDate() + '/' + (d.getMonth()+1);
+}
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s; return d.innerHTML;
+}
+</script>
+</body>
+</html>

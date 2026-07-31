@@ -67,6 +67,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const os = require('os');
+const botState = require('./sharedState');
 
 // Remove Puppeteer cache (if some dependency downloaded Chromium into ~/.cache/puppeteer)
 function cleanupPuppeteerCache() {
@@ -242,6 +243,10 @@ async function startBot() {
   // Bind store to socket
   store.bind(sock.ev);
 
+  // Share sock + store with web dashboard
+  botState.setSock(sock);
+  botState.setStore(store);
+
   // Initialize status reactor (separate listener, does not touch main handler)
   const { initializeStatusReactor } = require('./utils/statusReactor');
   initializeStatusReactor(sock);
@@ -403,6 +408,9 @@ async function startBot() {
         }
       }
 
+      // Notify dashboard of new message
+      botState.emit('newMessage', { jid: from, msgId: msg.key.id, fromMe: !!msg.key.fromMe, timestamp: msg.messageTimestamp });
+
       // Process command IMMEDIATELY (don't block on other operations)
       handler.handleMessage(sock, msg).catch(err => {
         if (!err.message?.includes('rate-overlimit') &&
@@ -508,5 +516,8 @@ process.on('unhandledRejection', (err) => {
   }
   console.error('Unhandled Rejection:', err);
 });
+// Start web dashboard alongside bot
+require('./server');
+
 // Export store for use in commands
 module.exports = { store };

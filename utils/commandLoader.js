@@ -1,9 +1,15 @@
 /**
- * Command Loader - Separate module to avoid circular dependencies
+ * Command Loader - Loads built-in commands + restores plugins
  */
 
 const fs = require('fs');
 const path = require('path');
+
+let commandsMap = null;
+
+function getCommandMap() {
+	return commandsMap;
+}
 
 function registerRegistryCommands(commands, modulePath, label) {
   try {
@@ -27,12 +33,12 @@ function registerEconomyCommands(commands) {
 }
 
 const loadCommands = () => {
-  const commands = new Map();
+  commandsMap = new Map();
   const commandsPath = path.join(__dirname, '..', 'commands');
   
   if (!fs.existsSync(commandsPath)) {
     console.log('Commands directory not found');
-    return commands;
+    return commandsMap;
   }
   
   const categories = fs.readdirSync(commandsPath);
@@ -46,10 +52,10 @@ const loadCommands = () => {
         try {
           const command = require(path.join(categoryPath, file));
           if (command.name) {
-            commands.set(command.name, command);
+            commandsMap.set(command.name, command);
             if (command.aliases) {
               command.aliases.forEach(alias => {
-                commands.set(alias, command);
+                commandsMap.set(alias, command);
               });
             }
           }
@@ -60,10 +66,18 @@ const loadCommands = () => {
     }
   });
   
-  registerFunCommands(commands);
-  registerEconomyCommands(commands);
-  return commands;
+  registerFunCommands(commandsMap);
+  registerEconomyCommands(commandsMap);
+
+  // Restore plugins from gist registry (re-downloads if files missing)
+  const { restorePlugins } = require('./pluginManager');
+  restorePlugins(commandsMap).then(count => {
+    if (count > 0) console.log(`🔌 ${count} plugin(s) active`);
+  }).catch(err => {
+    console.error('Plugin restore failed:', err.message);
+  });
+
+  return commandsMap;
 };
 
-module.exports = { loadCommands, registerFunCommands, registerEconomyCommands };
-
+module.exports = { loadCommands, getCommandMap, registerFunCommands, registerEconomyCommands };

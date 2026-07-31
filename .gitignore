@@ -13,6 +13,9 @@ session/**/*
 database/
 database/**/*
 
+# Plugins (installed at runtime from gists)
+plugins/
+
 # Logs
 *.log
 logs/

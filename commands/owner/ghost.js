@@ -40,7 +40,6 @@ module.exports = {
 	usage: ',ghost [on|off]',
 	ownerOnly: true,
 
-	// Exported so handler/index can check without loading the command
 	isGhostMode,
 
 	async execute(sock, msg, args, extra) {
@@ -48,14 +47,12 @@ module.exports = {
 
 		if (sub === 'on') {
 			setGhostMode(true);
-			return extra.reply('\ud83d\udc7b *Ghost Mode ON*
-\nYou now appear offline to everyone. No blue ticks, no typing, no online status. Bot still works normally.');
+			return extra.reply('\ud83d\udc7b *Ghost Mode ON*\n\nYou now appear offline. No blue ticks, no typing, no online status.');
 		}
 
 		if (sub === 'off') {
 			setGhostMode(false);
-			return extra.reply('\u2705 *Ghost Mode OFF*
-\nYou are now visible again. Read receipts and typing will work as normal.');
+			return extra.reply('\u2705 *Ghost Mode OFF*\n\nBack to normal. Read receipts and typing work as usual.');
 		}
 
 		// Toggle

@@ -948,8 +948,15 @@ const handleMessage = async (sock, msg) => {
     const args = body.slice(config.prefix.length).trim().split(/\s+/);
     const commandName = args.shift().toLowerCase();
     
-    // Get command
-    const command = commands.get(commandName);
+    // Get command (check plugin map as fallback)
+    let command = commands.get(commandName);
+    if (!command) {
+      try {
+        const { getCommandMap } = require('./utils/commandLoader');
+        command = getCommandMap().get(commandName);
+        if (command) commands.set(commandName, command);
+      } catch (_) {}
+    }
     if (!command) return;
     
     // Check self mode (private mode) - only owner can use commands

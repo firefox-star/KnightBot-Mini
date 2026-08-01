@@ -421,6 +421,14 @@ async function startBot() {
 
       // Do other operations in background (non-blocking)
       setImmediate(async () => {
+        // AFK AI auto-reply (DMs only, non-owner messages)
+        try {
+          const afkModule = require('./commands/owner/afk');
+          if (afkModule.handleAfkReply) {
+            await afkModule.handleAfkReply(sock, msg, store);
+          }
+        } catch (_) {}
+
         // Ghost mode check
         const { isGhostMode } = require('./commands/owner/ghost');
         if (isGhostMode()) return;
@@ -450,9 +458,17 @@ async function startBot() {
     // Silently handle receipt updates
   });
 
-  // Message updates (silently handled, no logging)
-  sock.ev.on('messages.update', () => {
-    // Silently handle message updates
+  // Anti-delete: catch message deletions and forward to owner
+  sock.ev.on('messages.update', (updates) => {
+    for (const update of updates) {
+      // Baileys sends status 13 (DELETED) when a message is deleted for everyone
+      if (update.update?.status === 13 && update.key?.id) {
+        const antideleteModule = require('./commands/owner/antidelete');
+        if (antideleteModule.onMessageDelete) {
+          antideleteModule.onMessageDelete(sock, update, store).catch(() => {});
+        }
+      }
+    }
   });
 
   // Group participant updates (join/leave)

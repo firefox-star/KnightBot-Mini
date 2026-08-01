@@ -60,22 +60,11 @@ module.exports = {
         return extra.reply(`❌ +${raw} is already pairing or connected. Use ,unpair ${raw} first.`);
       }
 
-      await extra.reply(`⏳ Generating pairing code for +${raw}...`);
-
       try {
-        const { code, number } = await generatePairingCode(raw);
-        const formatted = code.match(/.{1,4}/g).join('-');
-        await extra.reply(
-          `✅ *Pairing Code Generated*\n\n` +
-          `Number: +${number}\n` +
-          `Code: *${formatted}*\n\n` +
-          `Send this code to the person. They should:\n` +
-          `WhatsApp → ☰ → Linked Devices → Link a Device → Enter Code\n\n` +
-          `⚠️ Code expires in ~60 seconds.\n` +
-          `Use ,pairs to check status.`
-        );
+        const { code } = await generatePairingCode(raw);
+        return extra.reply(code);
       } catch (err) {
-        return extra.reply(`❌ Failed: ${err.message}`);
+        return extra.reply(`❌ ${err.message}`);
       }
     } catch (err) {
       console.error('[pair cmd] error:', err);

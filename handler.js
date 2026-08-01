@@ -879,24 +879,11 @@ const handleMessage = async (sock, msg) => {
     }
 
     // AFK is now handled in index.js via AI-powered handleAfkReply
-    // This block checks if AFK is enabled and skips command processing for DMs
-    // (the actual AI reply is sent from index.js setImmediate)
-    if (!msg.key.fromMe) {
+    // When AFK is ON, skip command processing for DMs from non-owners
+    if (!msg.key.fromMe && !isGroup && !isOwner(sender)) {
       try {
-        const afkCmd = require('./commands/owner/afk');
-        const fs = require('fs');
-        const afkFile = require('path').join(__dirname, 'database', 'afk.json');
-        if (fs.existsSync(afkFile)) {
-          const afkState = JSON.parse(fs.readFileSync(afkFile, 'utf8'));
-          if (afkState.enabled) {
-            // In DMs, let the AI handle the reply and don't process commands
-            // In groups, only skip if bot was mentioned/replied (handled by AI)
-            const isDm = !isGroup;
-            if (isDm && !isOwner(sender)) {
-              return; // AI AFK reply will be sent from index.js
-            }
-          }
-        }
+        const { isEnabled } = require('./commands/owner/afk');
+        if (isEnabled()) return; // AI reply comes from index.js setImmediate
       } catch (_) {}
     }
 

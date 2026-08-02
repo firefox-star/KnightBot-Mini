@@ -50,6 +50,42 @@ app.post('/api/ghost', authMiddleware, (req, res) => {
 	res.json({ ghost: !current });
 });
 
+// Resolve JIDs to phone numbers (batch)
+app.post('/api/resolve', authMiddleware, async (req, res) => {
+	const sock = botState.getSock();
+	if (!sock) return res.json({});
+
+	const { jids } = req.body || {};
+	if (!Array.isArray(jids) || jids.length === 0) return res.json({});
+
+	const result = {};
+	// Resolve in batches of 20 to avoid rate limits
+	const BATCH = 20;
+	for (let i = 0; i < jids.length; i += BATCH) {
+		const batch = jids.slice(i, i + BATCH);
+		try {
+			const resolved = await Promise.all(
+				batch.map(async (jid) => {
+					try {
+						const [r] = await sock.onWhatsApp(jid);
+						if (r?.exists) {
+							// r.jid is the phone-number JID even if input was LID
+								const num = r.jid.split('@')[0];
+								return { jid, number: num, exists: true };
+						}
+					} catch (_) {}
+					return { jid, number: null, exists: false };
+				})
+			);
+			for (const r of resolved) {
+				if (r.number) result[r.jid] = r.number;
+			}
+		} catch (_) {}
+	}
+
+	res.json(result);
+});
+
 // Chat list
 app.get('/api/chats', authMiddleware, (req, res) => {
 	const store = botState.getStore();
@@ -61,10 +97,12 @@ app.get('/api/chats', authMiddleware, (req, res) => {
 		const sorted = Array.from(chatMsgs.values()).sort((a, b) => (b.messageTimestamp || 0) - (a.messageTimestamp || 0));
 		const last = sorted[0];
 		const text = extractText(last);
-		if (!text) continue;
+		const mediaType = getMessageType(last);
+		const preview = text || mediaTypeLabel(mediaType);
+		if (!preview && mediaType === 'unknown') continue;
 		chats.push({
 			jid,
-			lastMessage: text.substring(0, 80),
+			lastMessage: preview.substring(0, 80),
 			lastTimestamp: last.messageTimestamp,
 			fromMe: !!last.key?.fromMe,
 			isGroup: jid.endsWith('@g.us'),
@@ -87,14 +125,50 @@ app.get('/api/chats/:jid', authMiddleware, (req, res) => {
 
 	const messages = Array.from(chatMsgs.values())
 		.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0))
-		.map(m => ({
-			id: m.key?.id,
-			fromMe: !!m.key?.fromMe,
-			sender: m.key?.participant || m.key?.remoteJid,
-			text: extractText(m),
-			timestamp: m.messageTimestamp,
-			type: getMessageType(m)
-		}));
+		.map(m => {
+			const type = getMessageType(m);
+			const text = extractText(m);
+			let mediaUrl = null;
+			let mediaMime = null;
+			const msgObj = m.message;
+
+			// Try to get media URL from the message
+			if (msgObj?.imageMessage?.url) { mediaUrl = msgObj.imageMessage.url; mediaMime = msgObj.imageMessage.mimetype; }
+			else if (msgObj?.videoMessage?.url) { mediaUrl = msgObj.videoMessage.url; mediaMime = msgObj.videoMessage.mimetype; }
+			else if (msgObj?.audioMessage?.url) { mediaUrl = msgObj.audioMessage.url; mediaMime = msgObj.audioMessage.mimetype; }
+			else if (msgObj?.stickerMessage?.url) { mediaUrl = msgObj.stickerMessage.url; mediaMime = msgObj.stickerMessage.mimetype; }
+			else if (msgObj?.documentMessage?.url) { mediaUrl = msgObj.documentMessage.url; mediaMime = msgObj.documentMessage.mimetype; }
+
+			// Get media file size
+			let fileSize = 0;
+			if (msgObj?.imageMessage?.fileLength) fileSize = msgObj.imageMessage.fileLength;
+			else if (msgObj?.videoMessage?.fileLength) fileSize = msgObj.videoMessage.fileLength;
+			else if (msgObj?.audioMessage?.fileLength) fileSize = msgObj.audioMessage.fileLength;
+			else if (msgObj?.documentMessage?.fileLength) fileSize = msgObj.documentMessage.fileLength;
+
+			// Duration for audio/video (in seconds)
+			let duration = 0;
+			if (msgObj?.audioMessage?.seconds) duration = msgObj.audioMessage.seconds;
+			else if (msgObj?.videoMessage?.seconds) duration = msgObj.videoMessage.seconds;
+
+			// Document filename
+			let fileName = '';
+			if (msgObj?.documentMessage?.fileName) fileName = msgObj.documentMessage.fileName;
+
+			return {
+				id: m.key?.id,
+				fromMe: !!m.key?.fromMe,
+				sender: m.key?.participant || m.key?.remoteJid,
+				text,
+				timestamp: m.messageTimestamp,
+				type,
+				mediaUrl,
+				mediaMime,
+				fileSize,
+				duration,
+				fileName
+			};
+		});
 
 	res.json(messages);
 });
@@ -114,11 +188,12 @@ app.post('/api/chats/:jid/send', authMiddleware, async (req, res) => {
 		await sock.sendMessage(jid, { text: text.trim() });
 		res.json({ success: true });
 	} catch (err) {
+		console.error('[dashboard send error]', err.message);
 		res.status(500).json({ error: err.message });
 	}
 });
 
-// ---- Smart Reply (renamed CC) ----
+// ---- Smart Reply ----
 app.post('/api/smart-reply/:jid', authMiddleware, async (req, res) => {
 	const store = botState.getStore();
 	const sock = botState.getSock();
@@ -243,7 +318,6 @@ app.get('/api/analytics', authMiddleware, (req, res) => {
 		const fromMe = msgs.filter(m => m.key?.fromMe).length;
 		const fromThem = msgs.length - fromMe;
 
-		// Find time of last message
 		const lastTs = msgs.reduce((max, m) => Math.max(max, m.messageTimestamp || 0), 0);
 
 		chatStats.push({
@@ -259,7 +333,6 @@ app.get('/api/analytics', authMiddleware, (req, res) => {
 	chatStats.sort((a, b) => b.total - a.total);
 	const topChats = chatStats.slice(0, 15);
 
-	// Messages per hour (last 24h)
 	const now = Math.floor(Date.now() / 1000);
 	const hourBuckets = new Array(24).fill(0);
 	for (const chatMsgs of store.messages.values()) {
@@ -326,7 +399,6 @@ app.get('/api/events', authMiddleware, (req, res) => {
 	};
 	botState.on('newMessage', onMsg);
 
-	// Send heartbeat every 15s to keep connection alive
 	const heartbeat = setInterval(() => {
 		try { res.write(':heartbeat\n\n'); } catch (_) {}
 	}, 15000);
@@ -347,10 +419,16 @@ const PORT = process.env.PORT || 3000;
 function extractText(msg) {
 	if (!msg?.message) return '';
 	const m = msg.message;
-	if (m.conversation) return m.conversation;
-	if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
-	if (m.imageMessage?.caption) return m.imageMessage.caption;
-	if (m.videoMessage?.caption) return m.videoMessage.caption;
+	// Unwrap containers
+	let unwrapped = m;
+	if (unwrapped.ephemeralMessage) unwrapped = unwrapped.ephemeralMessage.message;
+	if (unwrapped.viewOnceMessageV2) unwrapped = unwrapped.viewOnceMessageV2.message;
+	if (unwrapped.viewOnceMessage) unwrapped = unwrapped.viewOnceMessage.message;
+
+	if (unwrapped.conversation) return unwrapped.conversation;
+	if (unwrapped.extendedTextMessage?.text) return unwrapped.extendedTextMessage.text;
+	if (unwrapped.imageMessage?.caption) return unwrapped.imageMessage.caption;
+	if (unwrapped.videoMessage?.caption) return unwrapped.videoMessage.caption;
 	return '';
 }
 
@@ -364,6 +442,18 @@ function getMessageType(msg) {
 	if (m.stickerMessage) return 'sticker';
 	if (m.documentMessage) return 'document';
 	return 'other';
+}
+
+function mediaTypeLabel(type) {
+	const labels = {
+		image: '📷 Photo',
+		video: '🎬 Video',
+		audio: '🎤 Voice note',
+		sticker: '🏷️ Sticker',
+		document: '📄 Document',
+		other: '📨 Message'
+	};
+	return labels[type] || '📨 Message';
 }
 
 console.log(`\n\U0001f310 Dashboard: http://localhost:${PORT}`);

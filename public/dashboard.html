@@ -76,6 +76,14 @@ button{font-family:inherit}
 .empty-chat{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--text2);font-size:14px}
 .empty-chat .icon{font-size:48px;opacity:.3}
 
+/* Media message styles */
+.msg-media{display:flex;align-items:center;gap:8px;padding:4px 0}
+.msg-media .media-icon{font-size:24px;flex-shrink:0}
+.msg-media .media-info{flex:1;min-width:0}
+.msg-media .media-label{font-size:12px;color:var(--text2)}
+.msg-media .media-size{font-size:10px;color:var(--text2);opacity:.7}
+.msg-media .media-duration{font-size:10px;color:var(--text2);opacity:.7}
+
 /* Smart Reply panel */
 .sr-panel{background:var(--bg2);border-top:1px solid var(--border);max-height:0;overflow:hidden;transition:max-height .3s ease;flex-shrink:0}
 .sr-panel.open{max-height:300px}
@@ -245,7 +253,7 @@ button{font-family:inherit}
     </div>
     <div class="chat-view" id="chatView">
       <div class="empty-chat">
-        <div class="icon">\u{1F4AC}</div>
+        <div class="icon">💬</div>
         <div>Select a chat to start</div>
       </div>
     </div>
@@ -344,8 +352,9 @@ let currentJid = null;
 let ghostState = false;
 let currentVibe = 'a';
 let sseRunning = false;
-let pollTimer = null;
-let lastMsgCount = 0; // track new messages per chat
+
+// Phone number cache: jid -> resolved number
+const numberCache = {};
 
 function api(path, opts = {}) {
   const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
@@ -367,13 +376,8 @@ async function login() {
       body: JSON.stringify({ password: pw })
     });
     const data = await res.json();
-    if (data.token) {
-      token = data.token;
-      localStorage.setItem('kb_token', token);
-      showApp();
-    } else {
-      document.getElementById('err').textContent = 'Wrong password';
-    }
+    if (data.token) { token = data.token; localStorage.setItem('kb_token', token); showApp(); }
+    else { document.getElementById('err').textContent = 'Wrong password'; }
   } catch(e) { document.getElementById('err').textContent = 'Connection error'; }
 }
 document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
@@ -383,41 +387,24 @@ if (token) showApp();
 function showApp() {
   document.getElementById('login').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  loadStatus();
-  loadChats();
-  loadVibe();
-  startRealtime();
+  loadStatus(); loadChats(); loadVibe(); startRealtime();
   setInterval(loadStatus, 30000);
-  setInterval(loadChats, 10000); // poll chats every 10s as fallback
+  setInterval(loadChats, 10000);
 }
 
 // ============ REAL-TIME (SSE + Polling) ============
-function startRealtime() {
-  // Try SSE first, fall back to polling
-  connectSSE();
-}
-
-function connectSSE() {
+function startRealtime() { connectSSE(); }
+async function connectSSE() {
   if (sseRunning) return;
   sseRunning = true;
-
-  fetchSSE().catch(() => {}).finally(() => {
-    sseRunning = false;
-    // Reconnect after 3s
-    setTimeout(connectSSE, 3000);
-  });
+  fetchSSE().catch(() => {}).finally(() => { sseRunning = false; setTimeout(connectSSE, 3000); });
 }
-
 async function fetchSSE() {
-  const res = await fetch(API + '/api/events', {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
+  const res = await fetch(API + '/api/events', { headers: { 'Authorization': 'Bearer ' + token } });
   if (!res.ok) throw new Error('SSE failed');
-
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -426,35 +413,47 @@ async function fetchSSE() {
     buffer = lines.pop() || '';
     for (const line of lines) {
       if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          onNewMessage(data);
-        } catch(e) {}
+        try { onNewMessage(JSON.parse(line.slice(6))); } catch(e) {}
       }
     }
   }
 }
-
 function onNewMessage(data) {
-  // Reload chat list to show new message
   loadChats();
-  // If viewing the chat that got a new message, reload messages
-  if (data.jid === currentJid) {
-    loadChatMessages(data.jid);
-  }
+  if (data.jid === currentJid) loadChatMessages(data.jid);
+}
+
+// ============ PHONE NUMBER RESOLUTION ============
+async function resolveNumbers(jids) {
+  const needResolve = jids.filter(j => !numberCache[j] && !j.endsWith('@g.us'));
+  if (needResolve.length === 0) return;
+  try {
+    const resolved = await api('/api/resolve', { method: 'POST', body: { jids: needResolve } });
+    Object.assign(numberCache, resolved);
+  } catch(e) {}
+}
+
+function getDisplayName(jid) {
+  // Check cache first
+  if (numberCache[jid]) return '+' + numberCache[jid];
+  if (jid.endsWith('@g.us')) return 'Group ' + jid.split('@')[0].slice(-6);
+  // Fallback: show the JID part (might be LID hex, but at least something)
+  const raw = jid.split('@')[0];
+  // If it looks like a phone number (mostly digits), show it
+  if (/^\d{7,15}$/.test(raw)) return '+' + raw;
+  // Otherwise it's likely an LID — show a placeholder while resolving
+  return '...';
 }
 
 // ============ STATUS ============
 async function loadStatus() {
   try {
     const s = await api('/api/status');
-    const dot = document.getElementById('statusDot');
-    dot.className = 'status-dot ' + (s.connected ? 'on' : 'off');
+    document.getElementById('statusDot').className = 'status-dot ' + (s.connected ? 'on' : 'off');
     const hrs = Math.floor(s.uptime / 3600000);
     const mins = Math.floor((s.uptime % 3600000) / 60000);
     document.getElementById('uptimeText').textContent = (s.connected ? 'Online' : 'Offline') + ' | ' + hrs + 'h ' + mins + 'm';
-    ghostState = !!s.ghost;
-    updateGhostToggle();
+    ghostState = !!s.ghost; updateGhostToggle();
   } catch(e) {}
 }
 
@@ -462,8 +461,7 @@ async function loadStatus() {
 async function toggleGhost() {
   try {
     const r = await api('/api/ghost', { method: 'POST' });
-    ghostState = !!r.ghost;
-    updateGhostToggle();
+    ghostState = !!r.ghost; updateGhostToggle();
     toast(ghostState ? 'Ghost Mode ON' : 'Ghost Mode OFF');
   } catch(e) { toast('Failed to toggle ghost'); }
 }
@@ -474,25 +472,17 @@ function updateGhostToggle() {
 
 // ============ VIBE ============
 async function loadVibe() {
-  try {
-    const r = await api('/api/vibe');
-    currentVibe = r.vibe || 'a';
-    updateVibeUI();
-  } catch(e) {}
+  try { const r = await api('/api/vibe'); currentVibe = r.vibe || 'a'; updateVibeUI(); } catch(e) {}
 }
 async function setVibe(v) {
   try {
     await api('/api/vibe', { method: 'POST', body: { vibe: v } });
-    currentVibe = v;
-    updateVibeUI();
-    const labels = { f: 'Flirty', c: 'Casual', d: 'Deep', s: 'Sarcastic', a: 'Auto' };
-    toast('Vibe set to ' + (labels[v] || v));
+    currentVibe = v; updateVibeUI();
+    toast('Vibe set to ' + ({f:'Flirty',c:'Casual',d:'Deep',s:'Sarcastic',a:'Auto'}[v] || v));
   } catch(e) { toast('Failed to set vibe'); }
 }
 function updateVibeUI() {
-  document.querySelectorAll('.vibe-opt').forEach(el => {
-    el.classList.toggle('active', el.dataset.vibe === currentVibe);
-  });
+  document.querySelectorAll('.vibe-opt').forEach(el => el.classList.toggle('active', el.dataset.vibe === currentVibe));
 }
 
 // ============ TABS ============
@@ -511,6 +501,8 @@ let allChats = [];
 async function loadChats() {
   try {
     allChats = await api('/api/chats');
+    // Resolve phone numbers in background
+    resolveNumbers(allChats.map(c => c.jid));
     renderChats();
   } catch(e) {}
 }
@@ -518,23 +510,21 @@ function renderChats(filter = '') {
   const list = document.getElementById('chatList');
   if (!list) return;
   const filtered = filter
-    ? allChats.filter(c => c.jid.toLowerCase().includes(filter) || c.lastMessage.toLowerCase().includes(filter))
+    ? allChats.filter(c => getDisplayName(c.jid).toLowerCase().includes(filter) || c.lastMessage.toLowerCase().includes(filter))
     : allChats;
   list.innerHTML = filtered.map(c => {
-    const name = formatJid(c.jid);
+    const name = getDisplayName(c.jid);
     const time = c.lastTimestamp ? formatTime(c.lastTimestamp) : '';
     const prefix = c.fromMe ? 'You: ' : '';
-    const initial = c.isGroup ? '☇' : name.replace(/[^a-zA-Z]/g, '').charAt(0).toUpperCase() || '+';
+    const initial = c.isGroup ? '☇' : name.replace(/[^a-zA-Z0-9]/g, '').charAt(0).toUpperCase() || '+';
     return '<div class="chat-item' + (c.jid === currentJid ? ' active' : '') + '" onclick="openChat(\'' + c.jid.replace(/'/g, "\\'") + '\')">' +
-      '<div class="chat-avatar">' + (c.isGroup ? '☇' : escHtml(initial)) + '</div>' +
+      '<div class="chat-avatar">' + (c.isGroup ? '☰' : escHtml(initial)) + '</div>' +
       '<div class="chat-info"><div class="chat-name">' + escHtml(name) + '</div>' +
       '<div class="chat-preview">' + escHtml(prefix + c.lastMessage) + '</div></div>' +
       '<div class="chat-time">' + time + '</div></div>';
   }).join('');
 }
-function filterChats() {
-  renderChats(document.getElementById('searchInput').value.toLowerCase());
-}
+function filterChats() { renderChats(document.getElementById('searchInput').value.toLowerCase()); }
 
 // ============ MESSAGES ============
 async function openChat(jid) {
@@ -542,7 +532,7 @@ async function openChat(jid) {
   renderChats(document.getElementById('searchInput').value.toLowerCase());
   if (window.innerWidth < 769) toggleSidebar();
   const view = document.getElementById('chatView');
-  const name = formatJid(jid);
+  const name = getDisplayName(jid);
   view.innerHTML =
     '<div class="chat-header">' +
       '<button class="back-btn" onclick="closeChatView()">←</button>' +
@@ -564,7 +554,7 @@ async function openChat(jid) {
 function closeChatView() {
   currentJid = null;
   const view = document.getElementById('chatView');
-  view.innerHTML = '<div class="empty-chat"><div class="icon">ⓘ</div><div>Select a chat to start</div></div>';
+  view.innerHTML = '<div class="empty-chat"><div class="icon">💬</div><div>Select a chat to start</div></div>';
   renderChats(document.getElementById('searchInput').value.toLowerCase());
 }
 
@@ -583,15 +573,52 @@ function renderMessages(msgs) {
   list.innerHTML = msgs.map(m => {
     const cls = m.fromMe ? 'out' : 'in';
     const time = m.timestamp ? formatTime(m.timestamp) : '';
-    const text = m.text || ('[' + m.type + ']');
-    return '<div class="msg ' + cls + '"><div>' + escHtml(text) + '</div><div class="msg-meta">' + time + '</div></div>';
+
+    // Build message content based on type
+    let content = '';
+    if (m.text) {
+      // Text message (possibly with caption)
+      content = escHtml(m.text);
+    } else if (m.type && m.type !== 'text') {
+      // Media message without text
+      content = renderMediaPlaceholder(m);
+    } else {
+      content = escHtml(m.text || '');
+    }
+
+    return '<div class="msg ' + cls + '"><div>' + content + '</div><div class="msg-meta">' + time + '</div></div>';
   }).join('');
-  // Auto-scroll to bottom if new messages were added
-  if (msgs.length > prevCount) {
-    list.scrollTop = list.scrollHeight;
-  } else if (prevCount === 0) {
-    list.scrollTop = list.scrollHeight;
+
+  if (msgs.length > prevCount || prevCount === 0) list.scrollTop = list.scrollHeight;
+}
+
+function renderMediaPlaceholder(m) {
+  const icons = { image: '📷', video: '🎬', audio: '🎤', sticker: '🏷️', document: '📄' };
+  const labels = { image: 'Photo', video: 'Video', audio: 'Voice note', sticker: 'Sticker', document: 'Document' };
+  const icon = icons[m.type] || '📨';
+  const label = labels[m.type] || m.type || 'Message';
+
+  let details = '';
+  if (m.duration) {
+    const min = Math.floor(m.duration / 60);
+    const sec = m.duration % 60;
+    details += '<div class="media-duration">' + (min > 0 ? min + ':' : '') + (sec < 10 ? '0' : '') + sec + '</div>';
   }
+  if (m.fileSize) {
+    const kb = Math.round(m.fileSize / 1024);
+    details += '<div class="media-size">' + (kb > 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB') + '</div>';
+  }
+  if (m.fileName) {
+    details += '<div class="media-label">' + escHtml(m.fileName) + '</div>';
+  }
+
+  let caption = '';
+  if (m.text && m.type !== 'text') {
+    caption = '<div style="margin-top:4px">' + escHtml(m.text) + '</div>';
+  }
+
+  return '<div class="msg-media"><span class="media-icon">' + icon + '</span>' +
+    '<div class="media-info"><div>' + label + '</div>' + details + '</div></div>' + caption;
 }
 
 // ============ SEND ============
@@ -611,7 +638,10 @@ async function sendMsg() {
       list.appendChild(div);
       list.scrollTop = list.scrollHeight;
     }
-  } catch(e) { input.value = text; toast('Failed to send'); }
+  } catch(e) {
+    input.value = text;
+    toast('Failed to send');
+  }
 }
 
 // ============ SMART REPLY ============
@@ -620,36 +650,19 @@ async function smartReply() {
   const panel = document.getElementById('srPanel');
   const content = document.getElementById('srContent');
   const vibeTag = document.getElementById('srVibe');
-
-  // Show loading
   panel.classList.add('open');
-  const labels = { f: 'Flirty', c: 'Casual', d: 'Deep', s: 'Sarcastic', a: 'Auto' };
-  vibeTag.textContent = labels[currentVibe] || 'Auto';
+  vibeTag.textContent = ({f:'Flirty',c:'Casual',d:'Deep',s:'Sarcastic',a:'Auto'}[currentVibe] || 'Auto');
   content.innerHTML = '<div class="sr-loading"><span class="spin">⚙</span> Thinking...</div>';
-
   try {
     const r = await api('/api/smart-reply/' + encodeURIComponent(currentJid), { method: 'POST' });
-    if (r.error) {
-      content.innerHTML = '<div class="sr-loading">' + escHtml(r.error) + '</div>';
-      return;
-    }
-    // Parse numbered list
+    if (r.error) { content.innerHTML = '<div class="sr-loading">' + escHtml(r.error) + '</div>'; return; }
     const lines = (r.replies || '').split('\n').filter(l => l.trim());
     const options = lines.map(l => l.replace(/^\d+[\\.)\-]\s*/, '').trim()).filter(l => l.length > 2);
-
-    if (options.length === 0) {
-      content.innerHTML = '<div class="sr-loading">No suggestions generated</div>';
-      return;
-    }
-
+    if (options.length === 0) { content.innerHTML = '<div class="sr-loading">No suggestions</div>'; return; }
     content.innerHTML = '<div class="sr-list">' +
-      options.map(opt => '<div class="sr-option" onclick="useSmartReply(this)">' + escHtml(opt) + '</div>').join('') +
-      '</div>';
-  } catch(e) {
-    content.innerHTML = '<div class="sr-loading">Failed to get suggestions</div>';
-  }
+      options.map(opt => '<div class="sr-option" onclick="useSmartReply(this)">' + escHtml(opt) + '</div>').join('') + '</div>';
+  } catch(e) { content.innerHTML = '<div class="sr-loading">Failed to get suggestions</div>'; }
 }
-
 function useSmartReply(el) {
   const text = el.textContent;
   const input = document.getElementById('msgInput');
@@ -657,10 +670,7 @@ function useSmartReply(el) {
   closeSmartReply();
   input?.focus();
 }
-
-function closeSmartReply() {
-  document.getElementById('srPanel')?.classList.remove('open');
-}
+function closeSmartReply() { document.getElementById('srPanel')?.classList.remove('open'); }
 
 // ============ ANALYTICS ============
 async function loadAnalytics() {
@@ -670,37 +680,29 @@ async function loadAnalytics() {
     document.getElementById('statMsgs').textContent = r.totalMessages || 0;
     document.getElementById('topCount').textContent = '(' + (r.topChats?.length || 0) + ')';
 
-    // Activity chart
     const chart = document.getElementById('activityChart');
     const labels = document.getElementById('chartLabels');
     const hours = r.messagesPerHour || [];
     const maxH = Math.max(...hours, 1);
-    const now = new Date();
-    const currentHour = now.getHours();
-
+    const currentHour = new Date().getHours();
     chart.innerHTML = hours.map((v, i) => {
       const h = (currentHour - 23 + i + 24) % 24;
-      const pct = Math.max((v / maxH) * 100, 2);
-      return '<div class="bar" style="height:' + pct + '%" title="' + h + ':00 - ' + v + ' msgs"></div>';
+      return '<div class="bar" style="height:' + Math.max((v / maxH) * 100, 2) + '%" title="' + h + ':00 - ' + v + ' msgs"></div>';
     }).join('');
-
     labels.innerHTML = hours.map((_, i) => {
       const h = (currentHour - 23 + i + 24) % 24;
       return i % 4 === 0 ? '<span>' + h + 'h</span>' : '<span></span>';
     }).join('');
 
-    // Top chats
     const list = document.getElementById('topChatsList');
     const topMax = r.topChats?.[0]?.total || 1;
     list.innerHTML = (r.topChats || []).map((c, i) => {
-      const name = formatJid(c.jid);
-      const pct = Math.max((c.total / topMax) * 100, 3);
+      const name = getDisplayName(c.jid);
       return '<div class="a-row" onclick="switchTab(\'chats\');openChat(\'' + c.jid.replace(/'/g, "\\'") + '\')" style="cursor:pointer">' +
         '<span class="rank">' + (i + 1) + '</span>' +
         '<span class="name">' + escHtml(name) + '</span>' +
-        '<div class="bar-wrap"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
-        '<span class="count">' + c.total + '</span>' +
-      '</div>';
+        '<div class="bar-wrap"><div class="bar-fill" style="width:' + Math.max((c.total / topMax) * 100, 3) + '%"></div></div>' +
+        '<span class="count">' + c.total + '</span></div>';
     }).join('');
   } catch(e) {}
 }
@@ -709,13 +711,7 @@ async function loadAnalytics() {
 function showRestartModal() { document.getElementById('restartModal').classList.add('show'); }
 function showBroadcastModal() { document.getElementById('broadcastModal').classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-
-async function restartBot() {
-  closeModal('restartModal');
-  toast('Restarting bot...');
-  try { await api('/api/restart', { method: 'POST' }); } catch(e) {}
-}
-
+async function restartBot() { closeModal('restartModal'); toast('Restarting bot...'); try { await api('/api/restart', { method: 'POST' }); } catch(e) {} }
 async function sendBroadcast() {
   const text = document.getElementById('broadcastText').value.trim();
   if (!text) { toast('Type a message first'); return; }
@@ -739,16 +735,11 @@ function toggleSidebar() {
 // ============ TOAST ============
 function toast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
+  el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2500);
 }
 
 // ============ HELPERS ============
-function formatJid(jid) {
-  if (jid.endsWith('@g.us')) return 'Group ' + jid.split('@')[0].slice(-6);
-  return '+' + jid.split('@')[0];
-}
 function formatTime(ts) {
   if (!ts) return '';
   const d = new Date(ts * 1000);
@@ -756,7 +747,7 @@ function formatTime(ts) {
   const h = d.getHours().toString().padStart(2, '0');
   const m = d.getMinutes().toString().padStart(2, '0');
   if (d.toDateString() === now.toDateString()) return h + ':' + m;
-  return d.getDate() + '/' + (d.getMonth()+1);
+  return d.getDate() + '/' + (d.getMonth() + 1);
 }
 function escHtml(s) {
   const d = document.createElement('div');

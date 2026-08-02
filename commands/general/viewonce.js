@@ -95,8 +95,5 @@ module.exports = {
     }
 
     await extra.react('✅');
-    if (chatId !== ownerJid) {
-      await sock.sendMessage(chatId, { text: '✅ Sent to your DM.' }, { quoted: msg });
-    }
   }
 };

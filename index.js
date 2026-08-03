@@ -94,6 +94,36 @@ const store = {
       for (const msg of messages) {
         if (!msg.key?.id) continue;
 
+        // --- LID -> PN mapping capture for dashboard ---
+        const remoteJid = msg.key.remoteJid;
+        const remoteJidAlt = msg.key.remoteJidAlt;
+        const participant = msg.key.participant;
+        const participantAlt = msg.key.participantAlt;
+
+        if (remoteJid && remoteJidAlt) {
+          const isRLid = remoteJid.endsWith('@lid');
+          if (isRLid && !remoteJidAlt.endsWith('@lid')) {
+            botState.setLidMapping(remoteJid, remoteJidAlt);
+          } else if (!isRLid && remoteJidAlt.endsWith('@lid')) {
+            botState.setLidMapping(remoteJidAlt, remoteJid);
+          }
+        }
+
+        if (participant && participantAlt) {
+          const isPLid = participant.endsWith('@lid');
+          if (isPLid && !participantAlt.endsWith('@lid')) {
+            botState.setLidMapping(participant, participantAlt);
+          } else if (!isPLid && participantAlt.endsWith('@lid')) {
+            botState.setLidMapping(participantAlt, participant);
+          }
+        }
+
+        if (msg.pushName) {
+          const sJid = participant || remoteJid;
+          if (sJid) botState.setContactName(sJid, msg.pushName);
+        }
+        // --- End LID mapping capture ---
+
         const jid = msg.key.remoteJid;
         if (!store.messages.has(jid)) {
           store.messages.set(jid, new Map());

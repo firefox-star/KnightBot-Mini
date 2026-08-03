@@ -94,6 +94,6 @@ module.exports = {
       await sock.sendMessage(sendTo, { audio: buffer, ptt: true, mimetype: 'audio/ogg; codecs=opus' });
     }
 
-    await extra.react('✅');
+    await extra.react('👁️');
   }
 };

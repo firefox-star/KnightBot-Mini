@@ -60,6 +60,9 @@ button{font-family:inherit}
 .chat-avatar{width:46px;height:46px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;color:var(--accent);flex-shrink:0;margin-right:12px}
 .chat-info{flex:1;min-width:0}
 .chat-name{font-size:14px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-name .phone{color:var(--accent);font-weight:600}
+.chat-name .pushname{color:var(--text);font-weight:400}
+.chat-name .separator{color:var(--text2);margin:0 4px}
 .chat-preview{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-time{font-size:10px;color:var(--text2);flex-shrink:0;align-self:flex-start;margin-top:2px}
 
@@ -67,10 +70,12 @@ button{font-family:inherit}
 .chat-view{flex:1;display:flex;flex-direction:column;background:var(--bg);position:relative}
 .chat-header{padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:14px;font-weight:600;flex-shrink:0;display:flex;align-items:center;gap:8px}
 .chat-header .back-btn{background:none;border:none;color:var(--text);font-size:18px;cursor:pointer;display:none;padding:4px}
+.chat-header .header-number{color:var(--accent)}
 .messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
 .msg{max-width:70%;padding:7px 10px;border-radius:8px;font-size:13.5px;line-height:1.4;word-wrap:break-word;position:relative}
 .msg.out{background:var(--sent);align-self:flex-end;border-bottom-right-radius:2px}
 .msg.in{background:var(--received);align-self:flex-start;border-bottom-left-radius:2px}
+.msg-sender{font-size:11px;color:var(--accent);font-weight:600;margin-bottom:2px}
 .msg-meta{font-size:10px;color:rgba(255,255,255,.45);text-align:right;margin-top:2px}
 .msg.in .msg-meta{color:var(--text2)}
 .empty-chat{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--text2);font-size:14px}
@@ -83,6 +88,23 @@ button{font-family:inherit}
 .msg-media .media-label{font-size:12px;color:var(--text2)}
 .msg-media .media-size{font-size:10px;color:var(--text2);opacity:.7}
 .msg-media .media-duration{font-size:10px;color:var(--text2);opacity:.7}
+
+/* Image preview in chat */
+.msg-image{max-width:100%;border-radius:6px;margin-bottom:4px;cursor:pointer;max-height:300px;object-fit:cover}
+.msg-image.loading{min-height:100px;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:12px}
+
+/* Audio player in chat */
+.msg-audio{display:flex;align-items:center;gap:8px;padding:6px 0;min-width:200px}
+.msg-audio .play-btn{width:36px;height:36px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.msg-audio .play-btn:active{opacity:.7}
+.msg-audio audio{flex:1;height:32px;max-width:180px}
+.msg-audio .audio-dur{font-size:11px;color:var(--text2);flex-shrink:0}
+
+/* Video in chat */
+.msg-video{max-width:100%;border-radius:6px;margin-bottom:4px;max-height:250px}
+
+/* Sticker in chat */
+.msg-sticker{max-width:150px;max-height:150px;border-radius:6px}
 
 /* Smart Reply panel */
 .sr-panel{background:var(--bg2);border-top:1px solid var(--border);max-height:0;overflow:hidden;transition:max-height .3s ease;flex-shrink:0}
@@ -105,6 +127,7 @@ button{font-family:inherit}
 .input-bar input:focus{background:var(--bg4)}
 .send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .send-btn:active{opacity:.7}
+.send-btn.sending{opacity:.5;pointer-events:none}
 
 /* ---- CONTROLS VIEW ---- */
 .controls-view{flex:1;overflow-y:auto;padding:16px}
@@ -423,25 +446,51 @@ function onNewMessage(data) {
   if (data.jid === currentJid) loadChatMessages(data.jid);
 }
 
-// ============ PHONE NUMBER RESOLUTION ============
-async function resolveNumbers(jids) {
-  const needResolve = jids.filter(j => !numberCache[j] && !j.endsWith('@g.us'));
-  if (needResolve.length === 0) return;
-  try {
-    const resolved = await api('/api/resolve', { method: 'POST', body: { jids: needResolve } });
-    Object.assign(numberCache, resolved);
-  } catch(e) {}
+// ============ DISPLAY NAME ============
+// Build a display name from server-provided phone number + pushName
+function getChatDisplayName(chat) {
+  // Server now provides phoneNumber and pushName directly
+  if (chat.isGroup) {
+    return 'Group ' + chat.jid.split('@')[0].slice(-6);
+  }
+  // Priority: phone number (main), pushName as subtitle
+  if (chat.phoneNumber) {
+    return { phone: '+' + chat.phoneNumber, pushName: chat.pushName || null };
+  }
+  // Fallback to pushName only
+  if (chat.pushName) {
+    return { phone: null, pushName: chat.pushName };
+  }
+  // Last resort: raw JID
+  const raw = chat.jid.split('@')[0];
+  if (/^\d{7,15}$/.test(raw)) {
+    return { phone: '+' + raw, pushName: null };
+  }
+  return { phone: null, pushName: 'Unknown' };
 }
 
-function getDisplayName(jid) {
-  // Check cache first
+// Build display name HTML for chat list
+function chatNameHTML(chat) {
+  const d = getChatDisplayName(chat);
+  if (d.phone && d.pushName) {
+    return '<span class="phone">' + escHtml(d.phone) + '</span><span class="separator">·</span><span class="pushname">' + escHtml(d.pushName) + '</span>';
+  }
+  if (d.phone) return '<span class="phone">' + escHtml(d.phone) + '</span>';
+  return escHtml(d.pushName || 'Unknown');
+}
+
+// Plain text display name (for search, analytics, etc.)
+function getDisplayName(jid, chat) {
+  if (chat) {
+    const d = getChatDisplayName(chat);
+    if (d.phone) return d.phone + (d.pushName ? ' (' + d.pushName + ')' : '');
+    return d.pushName || jid;
+  }
+  // No chat object — use cache
   if (numberCache[jid]) return '+' + numberCache[jid];
   if (jid.endsWith('@g.us')) return 'Group ' + jid.split('@')[0].slice(-6);
-  // Fallback: show the JID part (might be LID hex, but at least something)
   const raw = jid.split('@')[0];
-  // If it looks like a phone number (mostly digits), show it
   if (/^\d{7,15}$/.test(raw)) return '+' + raw;
-  // Otherwise it's likely an LID — show a placeholder while resolving
   return '...';
 }
 
@@ -501,8 +550,6 @@ let allChats = [];
 async function loadChats() {
   try {
     allChats = await api('/api/chats');
-    // Resolve phone numbers in background
-    resolveNumbers(allChats.map(c => c.jid));
     renderChats();
   } catch(e) {}
 }
@@ -510,16 +557,19 @@ function renderChats(filter = '') {
   const list = document.getElementById('chatList');
   if (!list) return;
   const filtered = filter
-    ? allChats.filter(c => getDisplayName(c.jid).toLowerCase().includes(filter) || c.lastMessage.toLowerCase().includes(filter))
+    ? allChats.filter(c => {
+        const name = getDisplayName(c.jid, c).toLowerCase();
+        return name.includes(filter) || c.lastMessage.toLowerCase().includes(filter);
+      })
     : allChats;
   list.innerHTML = filtered.map(c => {
-    const name = getDisplayName(c.jid);
+    const nameHTML = chatNameHTML(c);
     const time = c.lastTimestamp ? formatTime(c.lastTimestamp) : '';
     const prefix = c.fromMe ? 'You: ' : '';
-    const initial = c.isGroup ? '☇' : name.replace(/[^a-zA-Z0-9]/g, '').charAt(0).toUpperCase() || '+';
+    const initial = c.isGroup ? '☇' : (c.phoneNumber || c.pushName || '+').charAt(0).toUpperCase();
     return '<div class="chat-item' + (c.jid === currentJid ? ' active' : '') + '" onclick="openChat(\'' + c.jid.replace(/'/g, "\\'") + '\')">' +
       '<div class="chat-avatar">' + (c.isGroup ? '☰' : escHtml(initial)) + '</div>' +
-      '<div class="chat-info"><div class="chat-name">' + escHtml(name) + '</div>' +
+      '<div class="chat-info"><div class="chat-name">' + nameHTML + '</div>' +
       '<div class="chat-preview">' + escHtml(prefix + c.lastMessage) + '</div></div>' +
       '<div class="chat-time">' + time + '</div></div>';
   }).join('');
@@ -531,12 +581,16 @@ async function openChat(jid) {
   currentJid = jid;
   renderChats(document.getElementById('searchInput').value.toLowerCase());
   if (window.innerWidth < 769) toggleSidebar();
+
+  // Find chat data for display name
+  const chatData = allChats.find(c => c.jid === jid);
+  const headerName = chatData ? chatNameHTML(chatData) : escHtml(jid);
+
   const view = document.getElementById('chatView');
-  const name = getDisplayName(jid);
   view.innerHTML =
     '<div class="chat-header">' +
       '<button class="back-btn" onclick="closeChatView()">←</button>' +
-      '<span>' + escHtml(name) + '</span>' +
+      '<span>' + headerName + '</span>' +
     '</div>' +
     '<div class="messages" id="msgList"></div>' +
     '<div class="sr-panel" id="srPanel">' +
@@ -546,7 +600,7 @@ async function openChat(jid) {
     '<div class="input-bar">' +
       '<button class="sr-btn" onclick="smartReply()" title="Smart Reply">✍</button>' +
       '<input id="msgInput" placeholder="Type a message..." onkeydown="if(event.key===\'Enter\')sendMsg()">' +
-      '<button class="send-btn" onclick="sendMsg()">➤</button>' +
+      '<button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>' +
     '</div>';
   await loadChatMessages(jid);
 }
@@ -574,19 +628,46 @@ function renderMessages(msgs) {
     const cls = m.fromMe ? 'out' : 'in';
     const time = m.timestamp ? formatTime(m.timestamp) : '';
 
+    // Sender name for group chats (show real phone number)
+    let senderHTML = '';
+    if (!m.fromMe && m.senderPhone) {
+      senderHTML = '<div class="msg-sender">+' + escHtml(m.senderPhone) + '</div>';
+    } else if (!m.fromMe && m.pushName) {
+      senderHTML = '<div class="msg-sender">' + escHtml(m.pushName) + '</div>';
+    }
+
     // Build message content based on type
     let content = '';
-    if (m.text) {
-      // Text message (possibly with caption)
+
+    if (m.type === 'image' && m.mediaUrl) {
+      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
+      content = '<img class="msg-image" src="' + mediaSrc + '" alt="Photo" loading="lazy" onerror="this.style.display=\'none\'">';
+      if (m.text) content += '<div>' + escHtml(m.text) + '</div>';
+    } else if (m.type === 'audio' && m.mediaUrl) {
+      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
+      const dur = m.duration ? formatDuration(m.duration) : '';
+      content = '<div class="msg-audio">' +
+        '<button class="play-btn" onclick="toggleAudio(this)">▶</button>' +
+        '<audio src="' + mediaSrc + '" preload="metadata"></audio>' +
+        (dur ? '<span class="audio-dur">' + dur + '</span>' : '') +
+        '</div>';
+      if (m.text) content += '<div>' + escHtml(m.text) + '</div>';
+    } else if (m.type === 'video' && m.mediaUrl) {
+      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
+      content = '<video class="msg-video" controls preload="metadata" src="' + mediaSrc + '"></video>';
+      if (m.text) content += '<div>' + escHtml(m.text) + '</div>';
+    } else if (m.type === 'sticker' && m.mediaUrl) {
+      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
+      content = '<img class="msg-sticker" src="' + mediaSrc + '" alt="Sticker" loading="lazy" onerror="this.outerHTML=\'' + escHtml(renderMediaPlaceholder(m)) + '\'">';
+    } else if (m.text) {
       content = escHtml(m.text);
     } else if (m.type && m.type !== 'text') {
-      // Media message without text
       content = renderMediaPlaceholder(m);
     } else {
       content = escHtml(m.text || '');
     }
 
-    return '<div class="msg ' + cls + '"><div>' + content + '</div><div class="msg-meta">' + time + '</div></div>';
+    return '<div class="msg ' + cls + '">' + senderHTML + '<div>' + content + '</div><div class="msg-meta">' + time + '</div></div>';
   }).join('');
 
   if (msgs.length > prevCount || prevCount === 0) list.scrollTop = list.scrollHeight;
@@ -621,27 +702,57 @@ function renderMediaPlaceholder(m) {
     '<div class="media-info"><div>' + label + '</div>' + details + '</div></div>' + caption;
 }
 
+// Toggle audio play/pause
+function toggleAudio(btn) {
+  const audio = btn.parentElement.querySelector('audio');
+  if (!audio) return;
+  if (audio.paused) {
+    audio.play();
+    btn.textContent = '⏸';
+  } else {
+    audio.pause();
+    btn.textContent = '▶';
+  }
+}
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return (m > 0 ? m + ':' : '') + (s < 10 ? '0' : '') + s;
+}
+
 // ============ SEND ============
 async function sendMsg() {
   const input = document.getElementById('msgInput');
+  const btn = document.getElementById('sendBtn');
   if (!input || !currentJid) return;
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
+
+  // Show sending state
+  if (btn) btn.classList.add('sending');
+
   try {
-    await api('/api/chats/' + encodeURIComponent(currentJid) + '/send', { method: 'POST', body: { text } });
-    const list = document.getElementById('msgList');
-    if (list) {
-      const div = document.createElement('div');
-      div.className = 'msg out';
-      div.innerHTML = '<div>' + escHtml(text) + '</div><div class="msg-meta">now</div>';
-      list.appendChild(div);
-      list.scrollTop = list.scrollHeight;
+    const res = await api('/api/chats/' + encodeURIComponent(currentJid) + '/send', { method: 'POST', body: { text } });
+    if (res.success) {
+      const list = document.getElementById('msgList');
+      if (list) {
+        const div = document.createElement('div');
+        div.className = 'msg out';
+        div.innerHTML = '<div>' + escHtml(text) + '</div><div class="msg-meta">now</div>';
+        list.appendChild(div);
+        list.scrollTop = list.scrollHeight;
+      }
+    } else {
+      toast('Failed: ' + (res.error || 'unknown error'));
+      input.value = text; // restore text on failure
     }
   } catch(e) {
+    toast('Send failed');
     input.value = text;
-    toast('Failed to send');
   }
+  if (btn) btn.classList.remove('sending');
 }
 
 // ============ SMART REPLY ============
@@ -697,7 +808,7 @@ async function loadAnalytics() {
     const list = document.getElementById('topChatsList');
     const topMax = r.topChats?.[0]?.total || 1;
     list.innerHTML = (r.topChats || []).map((c, i) => {
-      const name = getDisplayName(c.jid);
+      const name = getDisplayName(c.jid, null);
       return '<div class="a-row" onclick="switchTab(\'chats\');openChat(\'' + c.jid.replace(/'/g, "\\'") + '\')" style="cursor:pointer">' +
         '<span class="rank">' + (i + 1) + '</span>' +
         '<span class="name">' + escHtml(name) + '</span>' +

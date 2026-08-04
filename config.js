@@ -9,7 +9,7 @@ module.exports = {
     
     // Bot Configuration
     botName: 'Dove_Spyce_bot😉👹',
-    prefix: ',',
+    prefix: '.',
     sessionName: 'session',
     sessionID: process.env.SESSION_ID || '',
     newsletterJid: '120363161513685998@newsletter', // Newsletter JID for menu forwarding

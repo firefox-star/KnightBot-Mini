@@ -16,6 +16,8 @@ const { containsBadWord } = require('./utils/badwords');
 const { writeExifImg } = require('./utils/exif');
 const { msgHasLink } = require('./utils/linkDetect');
 const APIs = require('./utils/api');
+const botState = require('./sharedState');
+const botConfig = require('./utils/botConfig');
 const { resolveJoinLeaveTarget, toMention } = require('./utils/funHelpers');
 const { rememberFromMessage, rememberContact } = require('./utils/nameCache');
 const groupStatusTracker = require('./utils/groupStatusTracker');
@@ -40,6 +42,59 @@ const checkPairedUser = (jid) => {
     try { _isPairedUser = require('./utils/pairManager').isPairedUser; } catch (_) { return false; }
   }
   return _isPairedUser(jid);
+};
+
+// ── DM reply system ─────────────────────────────────────────────────────
+// Commands that change or read GROUP SETTINGS. When these are typed inside a
+// group, the bot's response is sent to the command sender's own DM instead of
+// the group (toggle with .dmreply or the dashboard).
+const SETTINGS_COMMANDS = new Set([
+  'antilink', 'antitag', 'antibot', 'antibadword', 'antispam', 'antisticker',
+  'antigroupmention', 'antigroupstatus', 'autosticker', 'chatbot',
+  'welcome', 'setwelcome', 'goodbye', 'setgoodbye',
+  'antiall', 'antiviewonce', 'antidelete', 'mute', 'unmute'
+]);
+
+const ownerJid = () => {
+  const owner = Array.isArray(config.ownerNumber) ? config.ownerNumber[0] : config.ownerNumber;
+  if (!owner) return null;
+  return owner.includes('@') ? owner : `${String(owner).split(':')[0]}@s.whatsapp.net`;
+};
+
+// Reply for a "settings" command goes to the sender's own DM, prefixed with
+// the group name so context is not lost.
+const sendDmReply = async (sock, senderJid, text, groupMetadata) => {
+  const dmJid = botState.resolvePnJid(senderJid);
+  const gName = groupMetadata?.subject || 'Group';
+  const body = `🛡️ *${gName}*\n\n${text}`;
+  try {
+    await sock.sendMessage(dmJid, { text: body });
+  } catch (e) {
+    console.error('[dmReply] failed:', e.message);
+  }
+};
+
+// Moderation REPORT notices go to the owner's DM instead of the group.
+const notifyOwner = async (sock, text) => {
+  const jid = ownerJid();
+  if (!jid) return;
+  try {
+    await sock.sendMessage(jid, { text });
+  } catch (e) {
+    console.error('[notifyOwner] failed:', e.message);
+  }
+};
+
+const senderNumber = (sender) =>
+  botState.resolvePhone(sender) || String(sender || '').split('@')[0];
+
+// Should this command's replies be redirected to the sender's DM?
+const shouldDmReply = (command) => {
+  if (!botConfig.get('dmSettingsReply', true)) return false;
+  if (!command) return false;
+  if (command.category === 'owner') return true;
+  const names = [command.name, ...(command.aliases || [])].map(n => String(n).toLowerCase());
+  return names.some(n => SETTINGS_COMMANDS.has(n));
 };
 
 // Load all commands
@@ -1060,31 +1115,37 @@ const handleMessage = async (sock, msg) => {
       return;
     }
     
+    // Replies to "setting" commands go to the sender's DM when run in a group
+    const dmReplyActive = isGroup && shouldDmReply(command);
+    const deny = (text) => dmReplyActive
+      ? sendDmReply(sock, sender, text, groupMetadata)
+      : sock.sendMessage(from, { text }, { quoted: msg });
+
     // Permission checks
     if (command.ownerOnly && !isOwner(sender)) {
-      return sock.sendMessage(from, { text: config.messages.ownerOnly }, { quoted: msg });
+      return deny(config.messages.ownerOnly);
     }
-    
+
     if (command.modOnly && !isMod(sender) && !isOwner(sender)) {
-      return sock.sendMessage(from, { text: '🔒 This command is only for moderators!' }, { quoted: msg });
+      return deny('🔒 This command is only for moderators!');
     }
-    
+
     if (command.groupOnly && !isGroup) {
       return sock.sendMessage(from, { text: config.messages.groupOnly }, { quoted: msg });
     }
-    
+
     if (command.privateOnly && isGroup) {
-      return sock.sendMessage(from, { text: config.messages.privateOnly }, { quoted: msg });
+      return deny(config.messages.privateOnly);
     }
-    
+
     if (command.adminOnly && !(await isAdmin(sock, sender, from, groupMetadata)) && !isOwner(sender)) {
-      return sock.sendMessage(from, { text: config.messages.adminOnly }, { quoted: msg });
+      return deny(config.messages.adminOnly);
     }
-    
+
     if (command.botAdminNeeded) {
       const botIsAdmin = await isBotAdmin(sock, from, groupMetadata);
       if (!botIsAdmin) {
-        return sock.sendMessage(from, { text: config.messages.botAdminNeeded }, { quoted: msg });
+        return deny(config.messages.botAdminNeeded);
       }
     }
     
@@ -1107,7 +1168,9 @@ const handleMessage = async (sock, msg) => {
       isAdmin: await isAdmin(sock, sender, from, groupMetadata),
       isBotAdmin: await isBotAdmin(sock, from, groupMetadata),
       isMod: isMod(sender),
-      reply: (text) => sock.sendMessage(from, { text }, { quoted: msg }),
+      reply: dmReplyActive
+        ? (text) => sendDmReply(sock, sender, text, groupMetadata)
+        : (text) => sock.sendMessage(from, { text }, { quoted: msg }),
       react: (emoji) => sock.sendMessage(from, { react: { text: emoji, key: msg.key } })
     });
     
@@ -1396,10 +1459,8 @@ const handleAntigroupstatus = async (sock, msg, groupMetadata, content) => {
       }
     } else if (deleted) {
       try {
-        await sock.sendMessage(from, {
-          text: '📵 *Anti Group Status!* Group status removed.',
-          mentions: [sender]
-        }, { quoted: msg });
+        // Report goes to the owner's DM — nothing is posted in the group
+        await notifyOwner(sock, `📵 *Anti Group Status* (${groupMetadata?.subject || 'group'})\nA group status post from @${senderNumber(sender)} was removed.`);
       } catch (e) {
         console.error('Failed to notify antigroupstatus:', e);
       }
@@ -1744,10 +1805,8 @@ const handleAntilink = async (sock, msg, groupMetadata) => {
         try {
           await sock.sendMessage(from, { delete: msg.key });
           await sock.groupParticipantsUpdate(from, [sender], 'remove');
-          await sock.sendMessage(from, { 
-            text: `🔗 Anti-link triggered. Link removed.`,
-            mentions: [sender]
-          }, { quoted: msg });
+          // Report goes to the owner's DM — nothing is posted in the group
+          await notifyOwner(sock, `🔗 *Anti-link* (${groupMetadata?.subject || 'group'})\n@${senderNumber(sender)}'s link was deleted and they were removed from the group.`);
         } catch (e) {
           console.error('Failed to kick for antilink:', e);
         }
@@ -1755,10 +1814,8 @@ const handleAntilink = async (sock, msg, groupMetadata) => {
         // Default: delete message
         try {
           await sock.sendMessage(from, { delete: msg.key });
-          await sock.sendMessage(from, { 
-            text: `🔗 Anti-link triggered. Link removed.`,
-            mentions: [sender]
-          }, { quoted: msg });
+          // Report goes to the owner's DM — nothing is posted in the group
+          await notifyOwner(sock, `🔗 *Anti-link* (${groupMetadata?.subject || 'group'})\n@${senderNumber(sender)}'s link was deleted from the group.`);
         } catch (e) {
           console.error('Failed to delete message for antilink:', e);
         }

@@ -1,6 +1,9 @@
 /**
  * WhatsApp MD Bot - Main Entry Point
  */
+// Load .env (if present) FIRST so API keys are available everywhere
+require('./utils/envLoader').loadEnvFile();
+
 process.env.PUPPETEER_SKIP_DOWNLOAD = 'true';
 process.env.PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true';
 process.env.PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || '/tmp/puppeteer_cache_disabled';
@@ -62,6 +65,9 @@ const {
 } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const config = require('./config');
+const botConfig = require('./utils/botConfig');
+const ghostChats = require('./utils/ghostChats');
+botConfig.applyToConfig(config); // apply dashboard-saved overrides (autoRead, dmSettingsReply, ...)
 const handler = require('./handler');
 const botState = require('./sharedState');
 const antidelete = require('./utils/antidelete');
@@ -513,6 +519,15 @@ async function startBot() {
         console.error('[antidelete]', err.message);
       });
 
+      // Push to web dashboard (SSE) — compact payload, dashboard fetches full chat on demand
+      botState.emit('newMessage', {
+        jid: from,
+        id: msg.key.id,
+        fromMe: !!msg.key.fromMe,
+        timestamp: msg.messageTimestamp,
+        pushName: msg.pushName || null
+      });
+
       // Process command IMMEDIATELY (don't block on other operations)
       handler.handleMessage(sock, msg).catch(err => {
         if (!err.message?.includes('rate-overlimit') &&
@@ -531,9 +546,10 @@ async function startBot() {
           }
         } catch (_) {}
 
-        // Ghost mode check — if ON, skip read receipts
+        // Ghost mode check — if ON, skip read receipts entirely.
+        // Per-chat ghost list (dashboard) also blocks blue ticks for that chat only.
         const { isGhostMode } = require('./commands/owner/ghost');
-        if (isGhostMode()) return;
+        if (isGhostMode() || ghostChats.has(from)) return;
         if (config.autoRead && from.endsWith('@g.us')) {
           try {
             await sock.readMessages([msg.key]);
@@ -555,9 +571,34 @@ async function startBot() {
     }
   });
 
-  // Message receipt updates (silently handled, no logging)
-  sock.ev.on('message-receipt.update', () => {
-    // Silently handle receipt updates
+  // Message receipt updates — feed the dashboard (delivered / read receipts)
+  sock.ev.on('message-receipt.update', (receipts) => {
+    for (const r of receipts || []) {
+      if (!r?.key?.fromMe) continue;
+      botState.emit('readReceipt', {
+        jid: r.key.remoteJid,
+        id: r.key.id,
+        participant: r.receipt?.participant || r.participant || null,
+        delivered: !!r.receipt?.receiptTimestamp,
+        at: Date.now()
+      });
+    }
+  });
+
+  // Blue ticks: when THEY read OUR messages (status 4 = READ, 5 = PLAYED)
+  sock.ev.on('messages.update', (updates) => {
+    for (const u of updates || []) {
+      const status = u?.update?.status;
+      if (u?.key?.fromMe && (status === 4 || status === 5)) {
+        botState.emit('readReceipt', {
+          jid: u.key.remoteJid,
+          id: u.key.id,
+          read: true,
+          status,
+          at: Date.now()
+        });
+      }
+    }
   });
 
   sock.ev.on('messages.update', (updates) => {

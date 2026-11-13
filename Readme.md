@@ -28,6 +28,35 @@ All commands and the overall structure are written in a way that makes customiza
 
 ---
 
+## 🛰️ Web Dashboard (v2) & DM Behaviour
+
+### Dashboard
+Open the bot's port (`PORT`, default `3000`) in a browser and log in with the dashboard password (`DASHBOARD_PASSWORD` env var, default `5656`).
+
+- **💬 Chats** — full web chat: send text, media, documents and voice notes. Per-chat **👻 Ghost mode** (no blue ticks sent to that chat), a **Mark read** button (send blue ticks on purpose), **AI suggested replies** and an AI **vibe** selector.
+- **🛡️ Groups** — every group setting as a **one-click switch** (antilink, antitag, welcome, chatbot, …), action dropdowns (delete/kick/warn) and welcome/goodbye message editors.
+- **⚡ Commands** — every bot command as a clickable box; run it in your DM or into a selected group (replies land in your DM).
+- **📢 Broadcast** — send to everyone, groups only, DMs only, or custom numbers.
+- **📊 Analytics** — busiest chats and 24h message activity.
+- **⚙️ Bot Control** — global switches (auto-read, auto-typing, self mode, …), AI provider status, restart.
+
+### DM behaviour
+- Any **group-settings command** (`.antilink`, `.welcome`, …) typed **inside a group** now answers in **your own DM** with the group name attached — the group stays quiet. Toggle any time with **`.dmreply on|off`** or the dashboard switch.
+- **Anti-link / anti-group-status reports** (link deleted, member kicked) go to the **owner's DM** instead of being posted in the group. Deletion itself is still silent in the group.
+
+### API keys (free models only)
+Set these as environment variables on your hosting panel (or in a local `.env` file — see `.env.example`). **Never commit real keys.**
+
+| Variable | Provider | Notes |
+| --- | --- | --- |
+| `GLM_API_KEY` | Zhipu GLM (open.bigmodel.cn) | `glm-4.5-flash` model is **free** (default) |
+| `OPENROUTER_API_KEY` | OpenRouter | any model id ending in `:free` is free (default `google/gemma-4-31b-it:free`) |
+| `DASHBOARD_PASSWORD` | — | dashboard login password (default `5656`) |
+
+AI replies automatically fall back between GLM → OpenRouter → public endpoint, all on free models.
+
+---
+
 ### 1. Fork the Repository
 
 <div align="center">

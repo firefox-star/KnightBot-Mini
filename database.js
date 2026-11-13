@@ -69,6 +69,9 @@ const updateGroupSettings = (groupId, settings) => {
   return writeDB(GROUPS_DB, groups);
 };
 
+// All known group settings (for the web dashboard group list)
+const getAllGroupSettings = () => readDB(GROUPS_DB);
+
 // User Data
 const getUser = (userId) => {
   const users = readDB(USERS_DB);
@@ -227,6 +230,7 @@ const isSudoUser = (sender) => {
 module.exports = {
   getGroupSettings,
   updateGroupSettings,
+  getAllGroupSettings,
   getUser,
   updateUser,
   getWarnings,

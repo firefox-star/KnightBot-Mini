@@ -1,12 +1,19 @@
+require('./utils/envLoader').loadEnvFile();
+
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const botState = require('./sharedState');
 const { isGhostMode, setGhostMode } = require('./commands/owner/ghost');
+const config = require('./config');
+const database = require('./database');
+const handler = require('./handler');
+const botConfig = require('./utils/botConfig');
+const ghostChats = require('./utils/ghostChats');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 
 /**
  * Get real phone number from any JID using sharedState LID map
@@ -32,15 +39,18 @@ function getPnJid(jid) {
         return jid;
 }
 
-const DASHBOARD_PASSWORD = '5656';
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '5656';
 
 // ---- Auth ----
 const tokens = new Map();
 
 function authMiddleware(req, res, next) {
+        // Bearer header OR ?token= (EventSource cannot send headers)
         const auth = req.headers.authorization;
-        if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
-        const token = auth.slice(7);
+        const headerToken = auth && auth.startsWith('Bearer ') ? auth.slice(7) : null;
+        const queryToken = req.query && req.query.token ? String(req.query.token) : null;
+        const token = headerToken || queryToken;
+        if (!token) return res.status(401).json({ error: 'No token' });
         if (!tokens.has(token)) return res.status(401).json({ error: 'Invalid token' });
         next();
 }
@@ -63,7 +73,17 @@ app.get('/api/status', authMiddleware, (req, res) => {
                 connected,
                 uptime: Date.now() - botState.startTime,
                 number: sock?.user?.id?.split(':')[0] || null,
-                ghost: isGhostMode()
+                ghost: isGhostMode(),
+                dmSettingsReply: botConfig.get('dmSettingsReply', true),
+                ghostChatCount: ghostChats.list().length,
+                botName: config.botName,
+                prefix: config.prefix,
+                ai: {
+                        glm: !!config.glmApiKey,
+                        openrouter: !!config.openRouterApiKey,
+                        glmModel: config.glmModel,
+                        openRouterModel: config.openRouterModel
+                }
         });
 });
 
@@ -211,7 +231,16 @@ app.post('/api/chats/:jid/send', authMiddleware, async (req, res) => {
                 // Resolve LID to PN JID for sending
                 jid = getPnJid(jid);
 
-                await sock.sendMessage(jid, { text: text.trim() });
+                const sent = await sock.sendMessage(jid, { text: text.trim() });
+
+                // Keep the outgoing message in the store so the web chat shows it
+                const store = botState.getStore();
+                if (sent?.key?.id && store) {
+                        if (!store.messages.has(jid)) store.messages.set(jid, new Map());
+                        sent.messageTimestamp = sent.messageTimestamp || Math.floor(Date.now() / 1000);
+                        store.messages.get(jid).set(sent.key.id, sent);
+                }
+
                 res.json({ success: true });
         } catch (err) {
                 console.error('[dashboard send error]', err.message);
@@ -475,16 +504,256 @@ app.get('/api/events', authMiddleware, (req, res) => {
         const onMsg = (data) => {
                 try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch (_) {}
         };
+        const onRead = (data) => {
+                try { res.write(`event: readReceipt\ndata: ${JSON.stringify(data)}\n\n`); } catch (_) {}
+        };
         botState.on('newMessage', onMsg);
+        botState.on('readReceipt', onRead);
 
         const heartbeat = setInterval(() => {
-                try { res.write(':heartbeat\n\n'); } catch (_) {}
+                try {
+                        const sock = botState.getSock();
+                        res.write(`event: status\ndata: ${JSON.stringify({ connected: !!sock && sock.ws?.readyState === 1, at: Date.now() })}\n\n`);
+                        res.write(':heartbeat\n\n');
+                } catch (_) {}
         }, 15000);
 
         req.on('close', () => {
                 clearInterval(heartbeat);
                 botState.removeListener('newMessage', onMsg);
+                botState.removeListener('readReceipt', onRead);
         });
+});
+
+// ---- Global settings (dashboard toggles) ----
+app.get('/api/settings', authMiddleware, (req, res) => {
+        res.json({
+                ...botConfig.getAll(),
+                botName: config.botName,
+                prefix: config.prefix,
+                ownerNumber: (Array.isArray(config.ownerNumber) ? config.ownerNumber[0] : config.ownerNumber) || null,
+                ai: {
+                        glm: !!config.glmApiKey,
+                        openrouter: !!config.openRouterApiKey,
+                        glmModel: config.glmModel,
+                        openRouterModel: config.openRouterModel
+                }
+        });
+});
+
+app.post('/api/settings', authMiddleware, (req, res) => {
+        const { key, value } = req.body || {};
+        try {
+                const current = botConfig.get(key, undefined);
+                let v = value;
+                if (typeof current === 'boolean') v = value === true || value === 'true' || value === 'on';
+                if (typeof current === 'boolean' || typeof value === 'boolean') {
+                        const saved = botConfig.set(key, v);
+                        return res.json({ success: true, key, value: saved });
+                }
+                const saved = botConfig.set(key, value);
+                res.json({ success: true, key, value: saved });
+        } catch (err) {
+                res.status(400).json({ error: err.message });
+        }
+});
+
+// ---- Groups + per-group settings (toggle switches) ----
+app.get('/api/groups', authMiddleware, async (req, res) => {
+        const store = botState.getStore();
+        const sock = botState.getSock();
+
+        const map = new Map();
+        for (const [jid, settings] of Object.entries(database.getAllGroupSettings())) {
+                if (!jid.endsWith('@g.us')) continue;
+                map.set(jid, { jid, name: null, participants: 0, lastTimestamp: 0, settings });
+        }
+        if (store) {
+                for (const [jid, chatMsgs] of store.messages.entries()) {
+                        if (!jid.endsWith('@g.us')) continue;
+                        const last = Array.from(chatMsgs.values()).sort((a, b) => (b.messageTimestamp || 0) - (a.messageTimestamp || 0))[0];
+                        const entry = map.get(jid) || { jid, name: null, participants: 0, settings: database.getGroupSettings(jid) };
+                        entry.lastTimestamp = last?.messageTimestamp || entry.lastTimestamp || 0;
+                        map.set(jid, entry);
+                }
+        }
+
+        // One bulk fetch for names (falls back silently if it fails)
+        let allMeta = {};
+        if (sock && sock.ws?.readyState === 1) {
+                try { allMeta = await sock.groupFetchAllParticipating() || {}; } catch (_) {}
+        }
+
+        const groups = [];
+        for (const [jid, entry] of map.entries()) {
+                const meta = allMeta[jid];
+                if (meta) {
+                        entry.name = meta.subject || entry.name;
+                        entry.participants = meta.participants?.length || entry.participants;
+                }
+                if (!entry.name) entry.name = botState.getContactName(jid) || jid;
+                groups.push(entry);
+        }
+        groups.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+        res.json(groups);
+});
+
+app.post('/api/groups/:jid/settings', authMiddleware, (req, res) => {
+        const jid = decodeURIComponent(req.params.jid);
+        if (!jid.endsWith('@g.us')) return res.status(400).json({ error: 'Not a group jid' });
+
+        const { key, value } = req.body || {};
+        const allowed = new Set([...Object.keys(config.defaultGroupSettings), 'suppress']);
+        if (!allowed.has(key)) return res.status(400).json({ error: `Unknown setting: ${key}` });
+
+        const def = config.defaultGroupSettings[key];
+        let v = value;
+        if (typeof def === 'boolean' || key === 'suppress') {
+                v = value === true || value === 'true' || value === 'on';
+        }
+        if (key === 'antilinkAction' || key === 'antitagAction' || key === 'antibotAction' || key === 'antistickerAction' || key === 'antibadwordAction' || key === 'antigroupmentionAction' || key === 'antigroupstatusAction') {
+                if (!['delete', 'kick', 'warn'].includes(String(v))) return res.status(400).json({ error: 'Action must be delete/kick/warn' });
+        }
+
+        const ok = database.updateGroupSettings(jid, { [key]: v });
+        if (!ok) return res.status(500).json({ error: 'Failed to save' });
+        res.json({ success: true, key, value: v });
+});
+
+// ---- Command list + run-command-from-web ----
+app.get('/api/commands', authMiddleware, (req, res) => {
+        try {
+                const { getCommandMap } = require('./utils/commandLoader');
+                const list = [];
+                for (const [name, c] of getCommandMap().entries()) {
+                        if (!c?.name || name !== c.name) continue; // skip alias entries
+                        list.push({
+                                name: c.name,
+                                aliases: c.aliases || [],
+                                category: c.category || 'general',
+                                description: c.description || '',
+                                usage: c.usage || `${config.prefix}${c.name}`,
+                                ownerOnly: !!c.ownerOnly,
+                                adminOnly: !!c.adminOnly,
+                                groupOnly: !!c.groupOnly
+                        });
+                }
+                list.sort((a, b) => String(a.category).localeCompare(String(b.category)) || String(a.name).localeCompare(String(b.name)));
+                res.json(list);
+        } catch (err) {
+                res.status(500).json({ error: err.message });
+        }
+});
+
+// Run a bot command from the web as the owner (target: "self" or a group jid).
+// Replies follow the normal rules — settings commands answer in the owner DM.
+app.post('/api/command', authMiddleware, async (req, res) => {
+        const sock = botState.getSock();
+        if (!sock || sock.ws?.readyState !== 1) return res.status(503).json({ error: 'Bot not connected' });
+
+        let cmdText = String(req.body?.cmd || '').trim();
+        if (!cmdText) return res.status(400).json({ error: 'No command' });
+        if (!cmdText.startsWith(config.prefix)) cmdText = config.prefix + cmdText;
+
+        const ownerNum = sock.user?.id?.split(':')[0];
+        if (!ownerNum) return res.status(503).json({ error: 'Bot identity unknown' });
+        const ownerJ = `${ownerNum}@s.whatsapp.net`;
+
+        const target = String(req.body?.target || 'self');
+        let jid = ownerJ;
+        if (target !== 'self') {
+                jid = getPnJid(target);
+                if (!jid.endsWith('@g.us')) return res.status(400).json({ error: 'Target must be "self" or a group jid' });
+        }
+
+        const fake = {
+                key: {
+                        remoteJid: jid,
+                        fromMe: true,
+                        participant: jid.endsWith('@g.us') ? ownerJ : undefined,
+                        id: 'DASH' + crypto.randomBytes(10).toString('hex').toUpperCase()
+                },
+                message: { conversation: cmdText },
+                pushName: 'Dashboard',
+                messageTimestamp: Math.floor(Date.now() / 1000)
+        };
+
+        handler.handleMessage(sock, fake).catch(err => {
+                console.error('[dashboard command]', err.message);
+        });
+        res.json({ success: true, cmd: cmdText, target: jid });
+});
+
+// ---- Per-chat ghost list (web chat without blue ticks) ----
+app.get('/api/ghostchats', authMiddleware, (req, res) => {
+        res.json({ chats: ghostChats.list() });
+});
+
+app.post('/api/ghostchats', authMiddleware, (req, res) => {
+        const { jid, enabled } = req.body || {};
+        if (!jid) return res.status(400).json({ error: 'No jid' });
+        const now = ghostChats.set(jid, !!enabled);
+        res.json({ success: true, jid, ghost: now });
+});
+
+// Send blue ticks now (mark chat as read) — only allowed when ghost is OFF for that chat
+app.post('/api/markread', authMiddleware, async (req, res) => {
+        const sock = botState.getSock();
+        const store = botState.getStore();
+        if (!sock || sock.ws?.readyState !== 1) return res.status(503).json({ error: 'Bot not connected' });
+
+        const jid = req.body?.jid;
+        if (!jid) return res.status(400).json({ error: 'No jid' });
+        if (isGhostMode()) return res.status(400).json({ error: 'Global ghost mode is ON — blue ticks stay off everywhere' });
+        if (ghostChats.has(jid)) return res.status(400).json({ error: 'Ghost is ON for this chat — turn it off first if you want blue ticks' });
+
+        const chatMsgs = store?.messages.get(jid);
+        if (!chatMsgs || chatMsgs.size === 0) return res.status(404).json({ error: 'No messages found' });
+
+        const keys = Array.from(chatMsgs.values()).filter(m => m && m.key && !m.key.fromMe).map(m => m.key);
+        if (!keys.length) return res.json({ marked: 0 });
+
+        try {
+                await sock.readMessages(keys);
+                res.json({ marked: keys.length });
+        } catch (err) {
+                res.status(500).json({ error: err.message });
+        }
+});
+
+// ---- Send media from the web chat ----
+app.post('/api/chats/:jid/send-media', authMiddleware, async (req, res) => {
+        const sock = botState.getSock();
+        const store = botState.getStore();
+        if (!sock || sock.ws?.readyState !== 1) return res.status(503).json({ error: 'Bot not connected' });
+
+        let jid = getPnJid(decodeURIComponent(req.params.jid));
+        const { kind, data, mimetype, caption, fileName, ptt } = req.body || {};
+        if (!data) return res.status(400).json({ error: 'No file data' });
+
+        let buffer;
+        try { buffer = Buffer.from(String(data), 'base64'); } catch (_) {}
+        if (!buffer || !buffer.length) return res.status(400).json({ error: 'Invalid file data' });
+
+        const content =
+                kind === 'image' ? { image: buffer, mimetype: mimetype || 'image/jpeg', caption: caption || undefined } :
+                kind === 'video' ? { video: buffer, mimetype: mimetype || 'video/mp4', caption: caption || undefined } :
+                kind === 'audio' ? { audio: buffer, mimetype: mimetype || 'audio/mpeg', ptt: !!ptt } :
+                kind === 'sticker' ? { sticker: buffer, mimetype: mimetype || 'image/webp' } :
+                { document: buffer, mimetype: mimetype || 'application/octet-stream', fileName: fileName || 'file', caption: caption || undefined };
+
+        try {
+                const sent = await sock.sendMessage(jid, content);
+                if (sent?.key?.id && store) {
+                        if (!store.messages.has(jid)) store.messages.set(jid, new Map());
+                        sent.messageTimestamp = sent.messageTimestamp || Math.floor(Date.now() / 1000);
+                        store.messages.get(jid).set(sent.key.id, sent);
+                }
+                res.json({ success: true, id: sent?.key?.id || null });
+        } catch (err) {
+                console.error('[dashboard send-media error]', err.message);
+                res.status(500).json({ error: err.message });
+        }
 });
 
 // ---- Serve dashboard ----

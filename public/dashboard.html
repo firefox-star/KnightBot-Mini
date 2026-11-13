@@ -1,869 +1,948 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>KnightBot Mini</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<title>Knight Bot — Web Control</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0b141a;--bg2:#111b21;--bg3:#202c33;--bg4:#2a3942;
-  --text:#e9edef;--text2:#8696a0;--accent:#00a884;--accent2:#005c4b;
-  --danger:#ea4335;--warn:#ffb300;--border:#222d34;--radius:8px;
-  --sent:#005c4b;--received:#202c33;
+  --bg:#0b1220; --panel:#121b2e; --panel2:#182349; --line:#22304a;
+  --txt:#e6edf7; --mut:#8fa3bf; --acc:#38bdf8; --acc2:#0ea5e9;
+  --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --ghost:#a78bfa;
 }
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;height:100dvh;overflow:hidden;-webkit-tap-highlight-color:transparent}
-button{font-family:inherit}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea,select{font:inherit;color:var(--txt);background:#0d1526;border:1px solid var(--line);border-radius:8px;padding:8px 10px;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--acc)}
+.hidden{display:none!important}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#2a3a58;border-radius:8px}
 
-/* ---- LOGIN ---- */
-#login{display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
-.login-box{background:var(--bg2);padding:40px 32px;border-radius:16px;width:320px;text-align:center}
-.login-box h1{font-size:22px;margin-bottom:4px}
-.login-box .sub{color:var(--accent);font-size:13px;font-weight:600;margin-bottom:20px;letter-spacing:1px}
-.login-box input{width:100%;padding:14px 16px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:16px;outline:none;margin-bottom:16px;text-align:center;letter-spacing:4px}
-.login-box input:focus{border-color:var(--accent)}
-.login-box button{width:100%;padding:14px;border:none;border-radius:var(--radius);background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
-.login-box button:active{opacity:.8}
-.login-box .err{color:var(--danger);font-size:13px;margin-top:10px;min-height:20px}
+/* ---------- login ---------- */
+#login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 600px at 50% -10%,#16243d,var(--bg))}
+.login-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:34px;width:min(92vw,380px);text-align:center}
+.login-card h1{font-size:20px;margin-bottom:4px}
+.login-card p{color:var(--mut);font-size:12px;margin-bottom:18px}
+.login-card input{width:100%;margin-bottom:12px;text-align:center;font-size:16px;letter-spacing:3px}
+.login-card button{width:100%;padding:10px;border-radius:8px;background:var(--acc);color:#04121e;font-weight:700}
+.login-err{color:var(--bad);font-size:12px;min-height:16px;margin-top:8px}
 
-/* ---- APP SHELL ---- */
-#app{display:none;height:100vh;height:100dvh;flex-direction:column}
+/* ---------- layout ---------- */
+#app{display:flex;height:100vh}
+#sidebar{width:212px;min-width:212px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.brand{padding:16px 14px;font-weight:800;font-size:15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.brand small{display:block;font-weight:500;color:var(--mut);font-size:10px}
+#sidebar nav{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:4px}
+.navbtn{text-align:left;padding:10px 12px;border-radius:9px;color:var(--mut);display:flex;gap:9px;align-items:center;font-weight:600}
+.navbtn:hover{background:#1a2742;color:var(--txt)}
+.navbtn.active{background:linear-gradient(90deg,#16304d,#12233c);color:var(--acc)}
+.connbox{border-top:1px solid var(--line);padding:12px 14px;font-size:12px;color:var(--mut)}
+.connbox .row{display:flex;justify-content:space-between;margin:3px 0}
 
-/* Header */
-.header{background:var(--bg2);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);min-height:52px;flex-shrink:0;z-index:10}
-.header-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
-.header-left h2{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hdr-chip{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);flex-shrink:0}
-.status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.status-dot.on{background:var(--accent)}
-.status-dot.off{background:var(--danger)}
-.hamburger{background:none;border:none;color:var(--text);font-size:22px;cursor:pointer;display:none;padding:4px}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+#topbar{height:54px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:10px;padding:0 14px}
+#viewTitle{font-weight:800;font-size:16px;flex:1}
+.topswitch{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);background:#0d1526;border:1px solid var(--line);padding:6px 10px;border-radius:999px}
+#viewArea{flex:1;overflow:hidden}
+.view{height:100%;display:flex;overflow:hidden}
 
-/* Tab bar */
-.tab-bar{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
-.tab-btn{flex:1;padding:10px 0;border:none;background:none;color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;transition:.2s}
-.tab-btn.active{color:var(--accent)}
-.tab-btn.active::after{content:'';position:absolute;bottom:0;left:20%;right:20%;height:3px;background:var(--accent);border-radius:3px 3px 0 0}
-.tab-btn svg{width:20px;height:20px;fill:currentColor}
+/* ---------- toggle switch ---------- */
+.switch{position:relative;width:38px;height:21px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#2c3c5c;border-radius:999px;transition:.18s}
+.slider:before{content:"";position:absolute;height:15px;width:15px;left:3px;top:3px;background:#cbd5e1;border-radius:50%;transition:.18s}
+.switch input:checked + .slider{background:var(--acc)}
+.switch input:checked + .slider:before{transform:translateX(17px);background:#04121e}
+.switch.on-ghost input:checked + .slider{background:var(--ghost)}
 
-/* ---- CHATS VIEW ---- */
-.chats-body{display:flex;flex:1;overflow:hidden}
+/* ---------- chats ---------- */
+.chatlist{width:300px;min-width:240px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--panel)}
+.chatlist .search{padding:10px;border-bottom:1px solid var(--line)}
+.chatlist .search input{width:100%}
+#chatItems{flex:1;overflow-y:auto}
+.chatitem{padding:10px 12px;border-bottom:1px solid #17223a;display:flex;gap:10px;cursor:pointer;align-items:center}
+.chatitem:hover{background:#16223a}
+.chatitem.active{background:#182e4d}
+.avatar{width:38px;height:38px;border-radius:50%;background:#1f2f4d;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--acc);flex:none;font-size:13px}
+.ci-main{flex:1;min-width:0}
+.ci-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.ci-last{color:var(--mut);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:10px;color:var(--mut)}
+.badge{background:var(--acc);color:#04121e;font-weight:800;border-radius:999px;padding:1px 7px;font-size:10px}
+.gbadge{color:var(--ghost);border:1px solid var(--ghost);border-radius:999px;padding:1px 6px;font-size:9px;font-weight:800}
 
-/* Sidebar */
-.sidebar{width:300px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
-.sidebar-search{padding:8px 10px;border-bottom:1px solid var(--border);position:relative}
-.sidebar-search input{width:100%;padding:9px 12px 9px 36px;border-radius:20px;border:none;background:var(--bg3);color:var(--text);font-size:13px;outline:none}
-.sidebar-search::before{content:'\2315';position:absolute;left:20px;top:50%;transform:translateY(-50%);color:var(--text2);font-size:16px}
-.chat-list{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
-.chat-item{display:flex;align-items:center;padding:12px 14px;cursor:pointer;transition:.1s;border-bottom:1px solid rgba(255,255,255,.03)}
-.chat-item:hover,.chat-item.active{background:var(--bg3)}
-.chat-avatar{width:46px;height:46px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;color:var(--accent);flex-shrink:0;margin-right:12px}
-.chat-info{flex:1;min-width:0}
-.chat-name{font-size:14px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chat-name .phone{color:var(--accent);font-weight:600}
-.chat-name .pushname{color:var(--text);font-weight:400}
-.chat-name .separator{color:var(--text2);margin:0 4px}
-.chat-preview{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chat-time{font-size:10px;color:var(--text2);flex-shrink:0;align-self:flex-start;margin-top:2px}
+.chatpanel{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.chat-head{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chat-head .who{flex:1;min-width:120px}
+.chat-head .who b{display:block}
+.chat-head .who span{font-size:11px;color:var(--mut)}
+.chipbtn{border:1px solid var(--line);background:#0d1526;border-radius:999px;padding:6px 12px;font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
+.chipbtn:hover{color:var(--txt);border-color:var(--acc)}
+.chipbtn.on{color:var(--ghost);border-color:var(--ghost)}
+.chipbtn.on2{color:var(--ok);border-color:var(--ok)}
+#msgArea{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:8px;background:radial-gradient(900px 400px at 80% -10%,#101c33,var(--bg))}
+.daysep{text-align:center;color:var(--mut);font-size:10px;margin:6px 0}
+.msg{max-width:72%;padding:8px 11px;border-radius:12px;position:relative;word-wrap:break-word;white-space:pre-wrap;font-size:13.5px}
+.msg.them{align-self:flex-start;background:#1c2a44;border-bottom-left-radius:3px}
+.msg.me{align-self:flex-end;background:#155e75;border-bottom-right-radius:3px}
+.msg .meta{font-size:9.5px;color:#a9bdd9;text-align:right;margin-top:3px;display:flex;gap:4px;justify-content:flex-end;align-items:center}
+.tick{font-size:10px}
+.tick.read{color:#60a5fa}
+.msg .sender{font-size:10px;color:var(--acc);margin-bottom:2px;font-weight:700}
+.msg img.media{max-width:260px;border-radius:8px;display:block}
+.msg audio,.msg video{max-width:280px;display:block}
+.msg .doclink{color:#9fd0ff;text-decoration:underline;font-size:12px}
+.ghostnote{align-self:center;background:#241d3d;border:1px dashed var(--ghost);color:var(--ghost);font-size:11px;padding:5px 12px;border-radius:999px}
 
-/* Chat view */
-.chat-view{flex:1;display:flex;flex-direction:column;background:var(--bg);position:relative}
-.chat-header{padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:14px;font-weight:600;flex-shrink:0;display:flex;align-items:center;gap:8px}
-.chat-header .back-btn{background:none;border:none;color:var(--text);font-size:18px;cursor:pointer;display:none;padding:4px}
-.chat-header .header-number{color:var(--accent)}
-.messages{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
-.msg{max-width:70%;padding:7px 10px;border-radius:8px;font-size:13.5px;line-height:1.4;word-wrap:break-word;position:relative}
-.msg.out{background:var(--sent);align-self:flex-end;border-bottom-right-radius:2px}
-.msg.in{background:var(--received);align-self:flex-start;border-bottom-left-radius:2px}
-.msg-sender{font-size:11px;color:var(--accent);font-weight:600;margin-bottom:2px}
-.msg-meta{font-size:10px;color:rgba(255,255,255,.45);text-align:right;margin-top:2px}
-.msg.in .msg-meta{color:var(--text2)}
-.empty-chat{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--text2);font-size:14px}
-.empty-chat .icon{font-size:48px;opacity:.3}
+.composer{border-top:1px solid var(--line);background:var(--panel);padding:10px 12px;display:flex;gap:8px;align-items:flex-end}
+.composer textarea{flex:1;resize:none;height:42px;max-height:120px;border-radius:10px}
+.iconbtn{width:42px;height:42px;border-radius:10px;background:#0d1526;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:17px}
+.iconbtn:hover{border-color:var(--acc)}
+#sendBtn{background:var(--acc);color:#04121e;font-weight:800;border:none}
+#emojiPop{position:absolute;bottom:64px;right:60px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;grid-template-columns:repeat(8,1fr);gap:4px;font-size:18px;z-index:50}
+.sugg{background:#14233f;border:1px solid var(--line);border-radius:10px;margin:0 18px 8px;padding:8px;display:flex;flex-wrap:wrap;gap:6px}
+.sugg button{background:#0d2c46;border:1px solid #1d3d5f;border-radius:999px;padding:5px 10px;font-size:12px;color:#bcd9f5;text-align:left;max-width:100%}
+.sugg .close{margin-left:auto;color:var(--mut)}
 
-/* Media message styles */
-.msg-media{display:flex;align-items:center;gap:8px;padding:4px 0}
-.msg-media .media-icon{font-size:24px;flex-shrink:0}
-.msg-media .media-info{flex:1;min-width:0}
-.msg-media .media-label{font-size:12px;color:var(--text2)}
-.msg-media .media-size{font-size:10px;color:var(--text2);opacity:.7}
-.msg-media .media-duration{font-size:10px;color:var(--text2);opacity:.7}
+/* ---------- generic panels ---------- */
+.paneled{flex:1;overflow-y:auto;padding:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:6px}
+.card p{color:var(--mut);font-size:12px}
+.muted{color:var(--mut)}
+.rowflex{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.section-title{margin:0 0 12px;font-size:16px;font-weight:800}
 
-/* Image preview in chat */
-.msg-image{max-width:100%;border-radius:6px;margin-bottom:4px;cursor:pointer;max-height:300px;object-fit:cover}
-.msg-image.loading{min-height:100px;background:var(--bg4);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:12px}
+/* group settings */
+.gitem{padding:10px 12px;border-bottom:1px solid #17223a;cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.gitem:hover,.gitem.active{background:#16223a}
+.gs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.gs-row{background:#0e1830;border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.gs-row label{font-size:12.5px;color:var(--txt)}
+.gs-row small{display:block;color:var(--mut);font-size:10.5px}
+textarea.wel{width:100%;min-height:110px;font-size:12px}
 
-/* Audio player in chat */
-.msg-audio{display:flex;align-items:center;gap:8px;padding:6px 0;min-width:200px}
-.msg-audio .play-btn{width:36px;height:36px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.msg-audio .play-btn:active{opacity:.7}
-.msg-audio audio{flex:1;height:32px;max-width:180px}
-.msg-audio .audio-dur{font-size:11px;color:var(--text2);flex-shrink:0}
+/* commands */
+.cmdgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.cmdbox{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px;cursor:pointer;transition:.12s}
+.cmdbox:hover{border-color:var(--acc);transform:translateY(-1px)}
+.cmdbox b{font-size:13px}
+.cmdbox .cat{float:right;font-size:9px;padding:2px 8px;border-radius:999px;background:#0d2c46;color:#7dd3fc;text-transform:uppercase;letter-spacing:.5px}
+.cmdbox p{font-size:11px;color:var(--mut);margin-top:4px;min-height:26px}
+.catfilter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.catfilter button{border:1px solid var(--line);background:#0d1526;border-radius:999px;padding:5px 12px;font-size:11.5px;color:var(--mut)}
+.catfilter button.active{color:#04121e;background:var(--acc);border-color:var(--acc);font-weight:700}
 
-/* Video in chat */
-.msg-video{max-width:100%;border-radius:6px;margin-bottom:4px;max-height:250px}
+/* broadcast / analytics / control */
+.tcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+.tcard b{font-size:22px;display:block}
+.tcard span{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+.bar{height:14px;background:#0d2c46;border-radius:6px;margin:3px 0;position:relative;overflow:hidden}
+.bar>i{position:absolute;inset:0 auto 0 0;background:var(--acc);border-radius:6px}
+.bar-row{display:flex;align-items:center;gap:8px;font-size:12px}
+.bar-row .lbl{width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mut)}
+.hrow{display:flex;align-items:flex-end;gap:3px;height:110px;margin-top:10px}
+.hcol{flex:1;background:var(--acc);border-radius:3px 3px 0 0;min-height:2px;position:relative}
+.hcol:hover::after{content:attr(data-h);position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--mut)}
 
-/* Sticker in chat */
-.msg-sticker{max-width:150px;max-height:150px;border-radius:6px}
+/* toasts + modal */
+#toasts{position:fixed;bottom:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:100}
+.toast{background:#0f2a3d;border:1px solid var(--acc);color:#cfeaff;padding:10px 14px;border-radius:10px;font-size:12.5px;max-width:320px;animation:pop .15s ease}
+.toast.err{background:#2d1414;border-color:var(--bad);color:#fecaca}
+@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+.modal-bg{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:90}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(92vw,420px)}
+.modal h3{margin-bottom:8px}
+.modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.btn{padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:#0d1526;color:var(--txt);font-weight:600}
+.btn.primary{background:var(--acc);color:#04121e;border-color:var(--acc)}
+.btn.danger{background:#3d1616;border-color:var(--bad);color:#fecaca}
 
-/* Smart Reply panel */
-.sr-panel{background:var(--bg2);border-top:1px solid var(--border);max-height:0;overflow:hidden;transition:max-height .3s ease;flex-shrink:0}
-.sr-panel.open{max-height:300px}
-.sr-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;font-size:12px;font-weight:600;color:var(--text2)}
-.sr-header .vibe-tag{color:var(--warn);font-weight:600}
-.sr-list{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px}
-.sr-option{padding:10px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);cursor:pointer;font-size:13px;line-height:1.4;transition:.15s;color:var(--text)}
-.sr-option:hover{background:var(--bg4);border-color:var(--accent)}
-.sr-option:active{transform:scale(.98)}
-.sr-loading{text-align:center;padding:20px;color:var(--text2);font-size:13px}
-.sr-loading .spin{display:inline-block;animation:spin 1s linear infinite;font-size:18px}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* Input bar */
-.input-bar{display:flex;align-items:center;padding:8px 12px;background:var(--bg2);gap:6px;flex-shrink:0}
-.input-bar .sr-btn{width:38px;height:38px;border-radius:50%;border:none;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.input-bar .sr-btn:active{opacity:.7}
-.input-bar input{flex:1;padding:10px 16px;border-radius:24px;border:none;background:var(--bg3);color:var(--text);font-size:14px;outline:none}
-.input-bar input:focus{background:var(--bg4)}
-.send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.send-btn:active{opacity:.7}
-.send-btn.sending{opacity:.5;pointer-events:none}
-
-/* ---- CONTROLS VIEW ---- */
-.controls-view{flex:1;overflow-y:auto;padding:16px}
-.ctrl-section{margin-bottom:20px}
-.ctrl-section h3{font-size:13px;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:600}
-.ctrl-card{background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden}
-.ctrl-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border)}
-.ctrl-row:last-child{border-bottom:none}
-.ctrl-row .label{display:flex;align-items:center;gap:10px}
-.ctrl-row .label .ic{font-size:20px}
-.ctrl-row .label .txt{font-size:14px;font-weight:500}
-.ctrl-row .label .desc{font-size:11px;color:var(--text2);margin-top:1px}
-
-/* Toggle switch */
-.toggle{width:44px;height:24px;border-radius:12px;background:var(--bg4);position:relative;cursor:pointer;transition:.3s;flex-shrink:0}
-.toggle.on{background:var(--accent)}
-.toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.3s}
-.toggle.on::after{left:22px}
-
-/* Vibe selector */
-.vibe-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px 16px}
-.vibe-opt{padding:12px 10px;border-radius:10px;background:var(--bg3);border:2px solid transparent;cursor:pointer;text-align:center;transition:.2s}
-.vibe-opt.active{border-color:var(--accent);background:var(--accent2)}
-.vibe-opt:active{transform:scale(.96)}
-.vibe-opt .emoji{font-size:22px;margin-bottom:4px}
-.vibe-opt .name{font-size:12px;font-weight:600}
-
-/* Action buttons */
-.action-btn{width:100%;padding:12px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s;margin-bottom:8px}
-.action-btn:active{opacity:.7;transform:scale(.98)}
-.action-btn.danger{border-color:var(--danger);color:var(--danger)}
-.action-btn.danger:active{background:var(--danger);color:#fff}
-
-/* Broadcast box */
-.broadcast-area{padding:12px 16px 16px}
-.broadcast-area textarea{width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;outline:none;resize:none;min-height:70px;font-family:inherit}
-.broadcast-area textarea:focus{border-color:var(--accent)}
-.broadcast-result{margin-top:8px;font-size:12px;color:var(--accent);min-height:18px}
-
-/* ---- ANALYTICS VIEW ---- */
-.analytics-view{flex:1;overflow-y:auto;padding:16px}
-.stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
-.stat-card{background:var(--bg2);border-radius:12px;padding:16px;border:1px solid var(--border)}
-.stat-card .val{font-size:26px;font-weight:700;color:var(--accent)}
-.stat-card .lbl{font-size:11px;color:var(--text2);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
-.a-card{background:var(--bg2);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden}
-.a-card h3{padding:12px 16px;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);font-weight:600}
-.a-card h3 span{color:var(--accent);font-weight:700}
-.a-row{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.03);font-size:13px}
-.a-row:last-child{border-bottom:none}
-.a-row .rank{width:22px;color:var(--text2);font-size:11px;font-weight:700}
-.a-row .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
-.a-row .bar-wrap{width:80px;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin:0 10px}
-.a-row .bar-fill{height:100%;background:var(--accent);border-radius:3px;transition:.5s}
-.a-row .count{font-size:12px;color:var(--text2);flex-shrink:0}
-
-/* Activity chart (simple bar) */
-.activity-chart{display:flex;align-items:flex-end;gap:3px;padding:14px 16px;height:100px}
-.activity-chart .bar{flex:1;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px;transition:.5s;opacity:.8}
-.activity-chart .bar:hover{opacity:1}
-.chart-labels{display:flex;gap:3px;padding:0 16px 12px}
-.chart-labels span{flex:1;text-align:center;font-size:9px;color:var(--text2)}
-
-/* ---- OVERLAY ---- */
-.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}
-.overlay.show{display:block}
-
-/* ---- TOAST ---- */
-.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg3);color:var(--text);padding:10px 20px;border-radius:20px;font-size:13px;z-index:200;opacity:0;transition:.3s;pointer-events:none;border:1px solid var(--border)}
-.toast.show{opacity:1}
-
-/* ---- MODAL ---- */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;align-items:center;justify-content:center;padding:20px}
-.modal-overlay.show{display:flex}
-.modal{background:var(--bg2);border-radius:16px;padding:24px;width:100%;max-width:340px;border:1px solid var(--border)}
-.modal h3{font-size:16px;margin-bottom:6px}
-.modal p{font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end}
-.modal-btns button{padding:8px 18px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer}
-.modal-btns .cancel{background:var(--bg3);color:var(--text)}
-.modal-btns .confirm{background:var(--danger);color:#fff}
-
-/* ---- MOBILE ---- */
-@media(max-width:768px){
-  .hamburger{display:block}
-  .sidebar{position:fixed;left:-300px;top:0;bottom:0;z-index:100;transition:left .25s ease;width:85vw;max-width:300px}
-  .sidebar.open{left:0}
-  .chat-header .back-btn{display:block}
-  .messages{padding:10px 8px}
-  .msg{max-width:85%}
-  .stat-cards{grid-template-columns:1fr 1fr}
-  .a-row .bar-wrap{display:none}
+.empty{color:var(--mut);text-align:center;padding:40px 10px;font-size:13px}
+@media(max-width:820px){
+  #sidebar{width:60px;min-width:60px}
+  .brand span,.navbtn span,.connbox{display:none}
+  .chatlist{width:200px;min-width:170px}
+  .msg{max-width:86%}
 }
-
-/* Scrollbar */
-::-webkit-scrollbar{width:5px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
 </style>
 </head>
 <body>
 
-<!-- Login -->
 <div id="login">
-  <div class="login-box">
-    <h1>KnightBot</h1>
-    <div class="sub">CONTROL PANEL</div>
-    <input type="password" id="pw" placeholder="****" autofocus inputmode="numeric" maxlength="4">
-    <button onclick="login()">Enter</button>
-    <div class="err" id="err"></div>
+  <div class="login-card">
+    <h1>🤖 Knight Bot</h1>
+    <p>Web control for your WhatsApp bot engine</p>
+    <input type="password" id="passInput" placeholder="Dashboard password" onkeydown="if(event.key==='Enter')doLogin()"/>
+    <button onclick="doLogin()">Unlock</button>
+    <div class="login-err" id="loginErr"></div>
   </div>
 </div>
 
-<!-- App -->
-<div id="app">
-  <div class="header">
-    <div class="header-left">
-      <button class="hamburger" onclick="toggleSidebar()">☰</button>
-      <h2>KnightBot Mini</h2>
-      <span class="status-dot off" id="statusDot"></span>
+<div id="app" class="hidden">
+  <aside id="sidebar">
+    <div class="brand">🤖 <span>Knight Bot<small>web control</small></span></div>
+    <nav>
+      <button class="navbtn active" data-view="chats" onclick="showView('chats')">💬 <span>Chats</span></button>
+      <button class="navbtn" data-view="groups" onclick="showView('groups')">🛡️ <span>Groups</span></button>
+      <button class="navbtn" data-view="commands" onclick="showView('commands')">⚡ <span>Commands</span></button>
+      <button class="navbtn" data-view="broadcast" onclick="showView('broadcast')">📢 <span>Broadcast</span></button>
+      <button class="navbtn" data-view="analytics" onclick="showView('analytics')">📊 <span>Analytics</span></button>
+      <button class="navbtn" data-view="control" onclick="showView('control')">⚙️ <span>Bot Control</span></button>
+    </nav>
+    <div class="connbox">
+      <div class="row"><span>Status</span><b id="connState" style="color:var(--bad)">offline</b></div>
+      <div class="row"><span>Number</span><b id="botNum">—</b></div>
+      <div class="row"><span>Uptime</span><b id="uptime">—</b></div>
     </div>
-    <div class="hdr-chip" id="uptimeText">--</div>
-  </div>
+  </aside>
 
-  <div class="tab-bar">
-    <button class="tab-btn active" onclick="switchTab('chats')" id="tabChats">
-      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/><path d="M7 9h10v2H7zm0-3h10v2H7zm0 6h7v2H7z"/></svg>
-      Chats
-    </button>
-    <button class="tab-btn" onclick="switchTab('controls')" id="tabControls">
-      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-      Controls
-    </button>
-    <button class="tab-btn" onclick="switchTab('analytics')" id="tabAnalytics">
-      <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
-      Insights
-    </button>
-  </div>
+  <main>
+    <header id="topbar">
+      <div id="viewTitle">Chats</div>
+      <div class="topswitch">👻 Global ghost <span class="switch on-ghost"><input type="checkbox" id="swGlobalGhost" onchange="toggleGlobalGhost(this.checked)"/><span class="slider"></span></span></div>
+      <div class="topswitch">📬 DM replies <span class="switch"><input type="checkbox" id="swDmReply" onchange="toggleDmReply(this.checked)"/><span class="slider"></span></span></div>
+      <button class="chipbtn" onclick="logout()">Logout</button>
+    </header>
 
-  <!-- CHATS VIEW -->
-  <div class="chats-body" id="viewChats">
-    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
-    <div class="sidebar" id="sidebar">
-      <div class="sidebar-search"><input id="searchInput" placeholder="Search chats" oninput="filterChats()"></div>
-      <div class="chat-list" id="chatList"></div>
-    </div>
-    <div class="chat-view" id="chatView">
-      <div class="empty-chat">
-        <div class="icon">💬</div>
-        <div>Select a chat to start</div>
-      </div>
-    </div>
-  </div>
+    <div id="viewArea">
 
-  <!-- CONTROLS VIEW -->
-  <div class="controls-view" id="viewControls" style="display:none">
-    <div class="ctrl-section">
-      <h3>Bot Modes</h3>
-      <div class="ctrl-card">
-        <div class="ctrl-row">
-          <div class="label">
-            <span class="ic">⚡</span>
-            <div><div class="txt">Ghost Mode</div><div class="desc">No blue ticks, typing or online status</div></div>
+      <!-- CHATS -->
+      <section id="view-chats" class="view">
+        <div class="chatlist">
+          <div class="search"><input id="chatSearch" placeholder="Search chats…" oninput="renderChatList()"/></div>
+          <div class="search" style="padding-top:0"><div class="rowflex"><input id="newChatNum" placeholder="New chat: 234800…" style="flex:1;padding:6px 8px;font-size:12px"/><button class="iconbtn" style="width:34px;height:34px;font-size:14px" onclick="startNewChat()" title="Open new chat">➕</button></div></div>
+          <div id="chatItems"><div class="empty">Loading chats…</div></div>
+        </div>
+        <div class="chatpanel" id="chatPanel">
+          <div class="empty" style="margin:auto">Select a chat 👈</div>
+        </div>
+      </section>
+
+      <!-- GROUPS -->
+      <section id="view-groups" class="view hidden">
+        <div class="chatlist" style="width:290px">
+          <div class="search"><input id="groupSearch" placeholder="Search groups…" oninput="renderGroupList()"/></div>
+          <div id="groupItems"><div class="empty">Loading…</div></div>
+        </div>
+        <div class="paneled" id="groupEditor"><div class="empty" style="margin:auto">Select a group to edit its settings 👈</div></div>
+      </section>
+
+      <!-- COMMANDS -->
+      <section id="view-commands" class="view hidden">
+        <div class="paneled" style="width:100%">
+          <div class="rowflex" style="margin-bottom:12px">
+            <h2 class="section-title" style="margin:0;flex:1">⚡ Command boxes</h2>
+            <span class="muted" style="font-size:12px">Run as:</span>
+            <select id="cmdTarget" style="min-width:220px"><option value="self">📬 My DM (safe)</option></select>
           </div>
-          <div class="toggle" id="ghostToggle" onclick="toggleGhost()"></div>
+          <input id="cmdSearch" placeholder="Search command…" oninput="renderCommands()" style="width:100%;margin-bottom:12px"/>
+          <div class="catfilter" id="catFilter"></div>
+          <div class="cmdgrid" id="cmdGrid"></div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <div class="ctrl-section">
-      <h3>Smart Reply Vibe</h3>
-      <div class="ctrl-card">
-        <div class="vibe-grid">
-          <div class="vibe-opt" data-vibe="f" onclick="setVibe('f')"><div class="emoji">❤️</div><div class="name">Flirty</div></div>
-          <div class="vibe-opt" data-vibe="c" onclick="setVibe('c')"><div class="emoji">✌️</div><div class="name">Casual</div></div>
-          <div class="vibe-opt" data-vibe="d" onclick="setVibe('d')"><div class="emoji">⚖️</div><div class="name">Deep</div></div>
-          <div class="vibe-opt" data-vibe="s" onclick="setVibe('s')"><div class="emoji">⚡</div><div class="name">Sarcastic</div></div>
-          <div class="vibe-opt" data-vibe="a" onclick="setVibe('a')" style="grid-column:span 2"><div class="emoji">✨</div><div class="name">Auto-detect</div></div>
+      <!-- BROADCAST -->
+      <section id="view-broadcast" class="view hidden">
+        <div class="paneled" style="max-width:720px;width:100%">
+          <h2 class="section-title">📢 Broadcast</h2>
+          <div class="card" style="margin-bottom:12px">
+            <textarea id="bcText" placeholder="Message to send…" style="width:100%;min-height:110px;margin-bottom:10px"></textarea>
+            <div class="rowflex">
+              <label class="muted" style="font-size:12px">Send to</label>
+              <select id="bcScope">
+                <option value="all">Everyone (all chats)</option>
+                <option value="groups">Groups only</option>
+                <option value="dms">DMs only</option>
+                <option value="custom">Custom numbers</option>
+              </select>
+              <input id="bcCustom" class="hidden" placeholder="2348000000001, 2348000000002…" style="flex:1"/>
+              <button class="btn primary" onclick="doBroadcast()">Send</button>
+            </div>
+          </div>
+          <p class="muted" style="font-size:12px">Broadcast uses the bot's existing engine. Recipients receive a normal message from you.</p>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <div class="ctrl-section">
-      <h3>Actions</h3>
-      <div class="ctrl-card">
-        <div style="padding:14px 16px">
-          <button class="action-btn" onclick="showRestartModal()">⚡ Restart Bot</button>
-          <button class="action-btn danger" onclick="showBroadcastModal()">Broadcast Message</button>
-        </div>
-      </div>
-    </div>
-  </div>
+      <!-- ANALYTICS -->
+      <section id="view-analytics" class="view hidden">
+        <div class="paneled" style="width:100%" id="analyticsPane"><div class="empty" style="margin:auto">Loading…</div></div>
+      </section>
 
-  <!-- ANALYTICS VIEW -->
-  <div class="analytics-view" id="viewAnalytics" style="display:none">
-    <div class="stat-cards" id="statCards">
-      <div class="stat-card"><div class="val" id="statChats">--</div><div class="lbl">Active Chats</div></div>
-      <div class="stat-card"><div class="val" id="statMsgs">--</div><div class="lbl">Total Messages</div></div>
+      <!-- BOT CONTROL -->
+      <section id="view-control" class="view hidden">
+        <div class="paneled" style="width:100%" id="controlPane"></div>
+      </section>
+
     </div>
-    <div class="a-card">
-      <h3>Activity (24h)</h3>
-      <div class="activity-chart" id="activityChart"></div>
-      <div class="chart-labels" id="chartLabels"></div>
-    </div>
-    <div class="a-card">
-      <h3>Top Chats <span id="topCount"></span></h3>
-      <div id="topChatsList"></div>
-    </div>
-  </div>
+  </main>
 </div>
 
-<!-- Toast -->
-<div class="toast" id="toast"></div>
-
-<!-- Restart Modal -->
-<div class="modal-overlay" id="restartModal">
-  <div class="modal">
-    <h3>Restart Bot?</h3>
-    <p>This will disconnect and reconnect your WhatsApp. Takes about 5-10 seconds.</p>
-    <div class="modal-btns">
-      <button class="cancel" onclick="closeModal('restartModal')">Cancel</button>
-      <button class="confirm" onclick="restartBot()">Restart</button>
-    </div>
-  </div>
-</div>
-
-<!-- Broadcast Modal -->
-<div class="modal-overlay" id="broadcastModal">
-  <div class="modal">
-    <h3>Broadcast Message</h3>
-    <p>Send to all active chats. Type your message below:</p>
-    <textarea id="broadcastText" placeholder="Type broadcast message..."></textarea>
-    <div id="broadcastResult" style="font-size:12px;color:var(--accent);margin-top:8px;min-height:18px"></div>
-    <div class="modal-btns" style="margin-top:12px">
-      <button class="cancel" onclick="closeModal('broadcastModal')">Cancel</button>
-      <button class="confirm" style="background:var(--accent)" onclick="sendBroadcast()">Send</button>
-    </div>
-  </div>
-</div>
-
+<div id="toasts"></div>
 <script>
-const API = '';
-let token = localStorage.getItem('kb_token');
-let currentJid = null;
-let ghostState = false;
-let currentVibe = 'a';
-let sseRunning = false;
+/* ================= core ================= */
+let TOKEN = localStorage.getItem('kb_token') || '';
+let CHATS = [], GHOSTS = new Set(), GROUPS = [], COMMANDS = [], SETTINGS = {};
+let currentJid = null, currentChat = null, unread = {}, sse = null;
+let lastTsSeen = {}, messagesCache = {}, readTicks = {};
 
-// Phone number cache: jid -> resolved number
-const numberCache = {};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-function api(path, opts = {}) {
-  const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
-  if (opts.body) opts.body = JSON.stringify(opts.body);
-  return fetch(API + path, { ...opts, headers }).then(r => {
-    if (r.status === 401) { localStorage.removeItem('kb_token'); location.reload(); }
-    return r.json();
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opts.headers || {}) }
+  });
+  if (res.status === 401) { logout(); throw new Error('Session expired'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+function toast(msg, err) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), err ? 6000 : 3500);
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date((ts > 9999999999 ? ts : ts * 1000));
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function fmtUptime(ms) {
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return (h ? h + 'h ' : '') + m + 'm';
+}
+function chatLabel(c) {
+  return c.pushName || (c.isGroup ? (c.jid.split('-')[0] + '…') : (c.phoneNumber ? '+' + c.phoneNumber : c.jid.split('@')[0]));
+}
+
+/* ================= login / boot ================= */
+async function doLogin() {
+  const pass = $('passInput').value;
+  $('loginErr').textContent = '';
+  try {
+    const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pass }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Wrong password');
+    TOKEN = data.token;
+    localStorage.setItem('kb_token', TOKEN);
+    boot();
+  } catch (e) { $('loginErr').textContent = e.message; }
+}
+function logout() {
+  localStorage.removeItem('kb_token');
+  TOKEN = '';
+  location.reload();
+}
+
+async function boot() {
+  if (!TOKEN) return;
+  $('login').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  try {
+    await refreshStatus();
+    loadGhostChats();
+    loadChats();
+    loadSettingsToggles();
+    connectSSE();
+    setInterval(refreshStatus, 30000);
+    setInterval(loadChats, 60000);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function refreshStatus() {
+  try {
+    const s = await api('/api/status');
+    $('connState').textContent = s.connected ? 'online' : 'offline';
+    $('connState').style.color = s.connected ? 'var(--ok)' : 'var(--bad)';
+    $('botNum').textContent = s.number ? '+' + s.number : '—';
+    $('uptime').textContent = fmtUptime(s.uptime);
+    $('swGlobalGhost').checked = !!s.ghost;
+    $('swDmReply').checked = s.dmSettingsReply !== false;
+  } catch (_) {}
+}
+
+function connectSSE() {
+  if (sse) sse.close();
+  sse = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
+  sse.onmessage = (ev) => {
+    try {
+      const d = JSON.parse(ev.data);
+      onNewMessage(d);
+    } catch (_) {}
+  };
+  sse.addEventListener('readReceipt', (ev) => {
+    try { onReadReceipt(JSON.parse(ev.data)); } catch (_) {}
+  });
+  sse.addEventListener('status', (ev) => {
+    try {
+      const d = JSON.parse(ev.data);
+      $('connState').textContent = d.connected ? 'online' : 'offline';
+      $('connState').style.color = d.connected ? 'var(--ok)' : 'var(--bad)';
+    } catch (_) {}
   });
 }
 
-// ============ LOGIN ============
-async function login() {
-  const pw = document.getElementById('pw').value;
-  if (!pw) return;
+async function onNewMessage(d) {
+  if (!d?.jid) return;
+  const isNew = !lastTsSeen[d.jid] || (d.timestamp || 0) >= lastTsSeen[d.jid];
+  lastTsSeen[d.jid] = Math.max(lastTsSeen[d.jid] || 0, d.timestamp || 0);
+  if (!d.fromMe && (!unread[d.jid])) unread[d.jid] = 0;
+  if (!d.fromMe && isNew) unread[d.jid] = (unread[d.jid] || 0) + (currentJid === d.jid ? 0 : 1);
+  loadChats(true);
+  if (currentJid === d.jid) {
+    await openChat(d.jid, true);
+    scrollMsgs();
+  }
+}
+
+function onReadReceipt(d) {
+  if (!d?.id) return;
+  readTicks[d.id] = { read: !!d.read, at: d.at };
+  if (currentJid === d.jid && messagesCache[d.jid]) {
+    const el = document.querySelector('[data-mid="' + d.id + '"] .tick');
+    if (el) { el.textContent = '✓✓'; el.classList.add('read'); el.title = 'Read'; }
+  }
+}
+
+/* ================= chats ================= */
+async function loadChats(silent) {
   try {
-    const res = await fetch(API + '/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw })
-    });
-    const data = await res.json();
-    if (data.token) { token = data.token; localStorage.setItem('kb_token', token); showApp(); }
-    else { document.getElementById('err').textContent = 'Wrong password'; }
-  } catch(e) { document.getElementById('err').textContent = 'Connection error'; }
+    const [chats, ghosts] = await Promise.all([api('/api/chats'), api('/api/ghostchats')]);
+    CHATS = chats; GHOSTS = new Set(ghosts.chats || []);
+    renderChatList();
+    if (currentJid) updateChatHeader();
+  } catch (e) { if (!silent) toast(e.message, true); }
 }
-document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
-if (token) showApp();
+function loadGhostChats() { /* loaded within loadChats */ }
 
-// ============ APP INIT ============
-function showApp() {
-  document.getElementById('login').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  loadStatus(); loadChats(); loadVibe(); startRealtime();
-  setInterval(loadStatus, 30000);
-  setInterval(loadChats, 10000);
+function startNewChat() {
+  const num = ($('newChatNum').value || '').replace(/\D/g, '');
+  if (num.length < 7) return toast('Enter a full phone number (with country code)', true);
+  const jid = num + '@s.whatsapp.net';
+  $('newChatNum').value = '';
+  if (!CHATS.some(c => c.jid === jid)) CHATS.unshift({ jid, isGroup: false, pushName: '+' + num, phoneNumber: num, lastMessage: '', lastTimestamp: Math.floor(Date.now() / 1000), fromMe: true, count: 0 });
+  openChat(jid);
 }
 
-// ============ REAL-TIME (SSE + Polling) ============
-function startRealtime() { connectSSE(); }
-async function connectSSE() {
-  if (sseRunning) return;
-  sseRunning = true;
-  fetchSSE().catch(() => {}).finally(() => { sseRunning = false; setTimeout(connectSSE, 3000); });
-}
-async function fetchSSE() {
-  const res = await fetch(API + '/api/events', { headers: { 'Authorization': 'Bearer ' + token } });
-  if (!res.ok) throw new Error('SSE failed');
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try { onNewMessage(JSON.parse(line.slice(6))); } catch(e) {}
-      }
-    }
-  }
-}
-function onNewMessage(data) {
-  loadChats();
-  if (data.jid === currentJid) loadChatMessages(data.jid);
-}
-
-// ============ DISPLAY NAME ============
-// Build a display name from server-provided phone number + pushName
-function getChatDisplayName(chat) {
-  // Server now provides phoneNumber and pushName directly
-  if (chat.isGroup) {
-    return 'Group ' + chat.jid.split('@')[0].slice(-6);
-  }
-  // Priority: phone number (main), pushName as subtitle
-  if (chat.phoneNumber) {
-    return { phone: '+' + chat.phoneNumber, pushName: chat.pushName || null };
-  }
-  // Fallback to pushName only
-  if (chat.pushName) {
-    return { phone: null, pushName: chat.pushName };
-  }
-  // Last resort: raw JID
-  const raw = chat.jid.split('@')[0];
-  if (/^\d{7,15}$/.test(raw)) {
-    return { phone: '+' + raw, pushName: null };
-  }
-  return { phone: null, pushName: 'Unknown' };
-}
-
-// Build display name HTML for chat list
-function chatNameHTML(chat) {
-  const d = getChatDisplayName(chat);
-  if (d.phone && d.pushName) {
-    return '<span class="phone">' + escHtml(d.phone) + '</span><span class="separator">·</span><span class="pushname">' + escHtml(d.pushName) + '</span>';
-  }
-  if (d.phone) return '<span class="phone">' + escHtml(d.phone) + '</span>';
-  return escHtml(d.pushName || 'Unknown');
-}
-
-// Plain text display name (for search, analytics, etc.)
-function getDisplayName(jid, chat) {
-  if (chat) {
-    const d = getChatDisplayName(chat);
-    if (d.phone) return d.phone + (d.pushName ? ' (' + d.pushName + ')' : '');
-    return d.pushName || jid;
-  }
-  // No chat object — use cache
-  if (numberCache[jid]) return '+' + numberCache[jid];
-  if (jid.endsWith('@g.us')) return 'Group ' + jid.split('@')[0].slice(-6);
-  const raw = jid.split('@')[0];
-  if (/^\d{7,15}$/.test(raw)) return '+' + raw;
-  return '...';
-}
-
-// ============ STATUS ============
-async function loadStatus() {
-  try {
-    const s = await api('/api/status');
-    document.getElementById('statusDot').className = 'status-dot ' + (s.connected ? 'on' : 'off');
-    const hrs = Math.floor(s.uptime / 3600000);
-    const mins = Math.floor((s.uptime % 3600000) / 60000);
-    document.getElementById('uptimeText').textContent = (s.connected ? 'Online' : 'Offline') + ' | ' + hrs + 'h ' + mins + 'm';
-    ghostState = !!s.ghost; updateGhostToggle();
-  } catch(e) {}
-}
-
-// ============ GHOST ============
-async function toggleGhost() {
-  try {
-    const r = await api('/api/ghost', { method: 'POST' });
-    ghostState = !!r.ghost; updateGhostToggle();
-    toast(ghostState ? 'Ghost Mode ON' : 'Ghost Mode OFF');
-  } catch(e) { toast('Failed to toggle ghost'); }
-}
-function updateGhostToggle() {
-  const el = document.getElementById('ghostToggle');
-  if (el) el.className = 'toggle' + (ghostState ? ' on' : '');
-}
-
-// ============ VIBE ============
-async function loadVibe() {
-  try { const r = await api('/api/vibe'); currentVibe = r.vibe || 'a'; updateVibeUI(); } catch(e) {}
-}
-async function setVibe(v) {
-  try {
-    await api('/api/vibe', { method: 'POST', body: { vibe: v } });
-    currentVibe = v; updateVibeUI();
-    toast('Vibe set to ' + ({f:'Flirty',c:'Casual',d:'Deep',s:'Sarcastic',a:'Auto'}[v] || v));
-  } catch(e) { toast('Failed to set vibe'); }
-}
-function updateVibeUI() {
-  document.querySelectorAll('.vibe-opt').forEach(el => el.classList.toggle('active', el.dataset.vibe === currentVibe));
-}
-
-// ============ TABS ============
-function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('viewChats').style.display = tab === 'chats' ? 'flex' : 'none';
-  document.getElementById('viewControls').style.display = tab === 'controls' ? 'block' : 'none';
-  document.getElementById('viewAnalytics').style.display = tab === 'analytics' ? 'block' : 'none';
-  if (tab === 'chats') document.getElementById('tabChats').classList.add('active');
-  if (tab === 'controls') document.getElementById('tabControls').classList.add('active');
-  if (tab === 'analytics') { document.getElementById('tabAnalytics').classList.add('active'); loadAnalytics(); }
-}
-
-// ============ CHATS ============
-let allChats = [];
-async function loadChats() {
-  try {
-    allChats = await api('/api/chats');
-    renderChats();
-  } catch(e) {}
-}
-function renderChats(filter = '') {
-  const list = document.getElementById('chatList');
-  if (!list) return;
-  const filtered = filter
-    ? allChats.filter(c => {
-        const name = getDisplayName(c.jid, c).toLowerCase();
-        return name.includes(filter) || c.lastMessage.toLowerCase().includes(filter);
-      })
-    : allChats;
-  list.innerHTML = filtered.map(c => {
-    const nameHTML = chatNameHTML(c);
-    const time = c.lastTimestamp ? formatTime(c.lastTimestamp) : '';
-    const prefix = c.fromMe ? 'You: ' : '';
-    const initial = c.isGroup ? '☇' : (c.phoneNumber || c.pushName || '+').charAt(0).toUpperCase();
-    return '<div class="chat-item' + (c.jid === currentJid ? ' active' : '') + '" onclick="openChat(\'' + c.jid.replace(/'/g, "\\'") + '\')">' +
-      '<div class="chat-avatar">' + (c.isGroup ? '☰' : escHtml(initial)) + '</div>' +
-      '<div class="chat-info"><div class="chat-name">' + nameHTML + '</div>' +
-      '<div class="chat-preview">' + escHtml(prefix + c.lastMessage) + '</div></div>' +
-      '<div class="chat-time">' + time + '</div></div>';
+function renderChatList() {
+  const q = ($('chatSearch').value || '').toLowerCase();
+  const items = CHATS.filter(c => {
+    const label = (c.pushName || c.phoneNumber || c.jid).toLowerCase();
+    return !q || label.includes(q) || (c.lastMessage || '').toLowerCase().includes(q);
+  });
+  if (!items.length) { $('chatItems').innerHTML = '<div class="empty">No chats yet</div>'; return; }
+  $('chatItems').innerHTML = items.map(c => {
+    const init = (c.pushName || chatLabel(c) || '?').trim()[0] || '?';
+    const un = unread[c.jid] || 0;
+    return `<div class="chatitem ${currentJid === c.jid ? 'active' : ''}" onclick="openChat('${esc(c.jid)}')">
+      <div class="avatar">${esc(init.toUpperCase())}</div>
+      <div class="ci-main">
+        <div class="ci-name">${esc(chatLabel(c))} ${c.isGroup ? '<span class="muted" style="font-size:9px">GROUP</span>' : ''} ${GHOSTS.has(c.jid) ? '<span class="gbadge">GHOST</span>' : ''}</div>
+        <div class="ci-last">${c.fromMe ? 'You: ' : ''}${esc(c.lastMessage || '')}</div>
+      </div>
+      <div class="ci-meta">
+        <span>${c.lastTimestamp ? fmtTime(c.lastTimestamp) : ''}</span>
+        ${un ? `<span class="badge">${un}</span>` : ''}
+      </div>
+    </div>`;
   }).join('');
 }
-function filterChats() { renderChats(document.getElementById('searchInput').value.toLowerCase()); }
 
-// ============ MESSAGES ============
-async function openChat(jid) {
+async function openChat(jid, keepScroll) {
   currentJid = jid;
-  renderChats(document.getElementById('searchInput').value.toLowerCase());
-  if (window.innerWidth < 769) toggleSidebar();
-
-  // Find chat data for display name
-  const chatData = allChats.find(c => c.jid === jid);
-  const headerName = chatData ? chatNameHTML(chatData) : escHtml(jid);
-
-  const view = document.getElementById('chatView');
-  view.innerHTML =
-    '<div class="chat-header">' +
-      '<button class="back-btn" onclick="closeChatView()">←</button>' +
-      '<span>' + headerName + '</span>' +
-    '</div>' +
-    '<div class="messages" id="msgList"></div>' +
-    '<div class="sr-panel" id="srPanel">' +
-      '<div class="sr-header"><span>Smart Reply <span class="vibe-tag" id="srVibe"></span></span><span onclick="closeSmartReply()" style="cursor:pointer">✕</span></div>' +
-      '<div id="srContent"></div>' +
-    '</div>' +
-    '<div class="input-bar">' +
-      '<button class="sr-btn" onclick="smartReply()" title="Smart Reply">✍</button>' +
-      '<input id="msgInput" placeholder="Type a message..." onkeydown="if(event.key===\'Enter\')sendMsg()">' +
-      '<button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>' +
-    '</div>';
-  await loadChatMessages(jid);
+  unread[jid] = 0;
+  try { currentChat = await api('/api/chats/' + encodeURIComponent(jid)); } catch (_) { currentChat = []; }
+  messagesCache[jid] = currentChat;
+  renderChatList();
+  renderChatPanel();
+  if (!keepScroll) scrollMsgs();
+  const ghostNow = GHOSTS.has(jid);
+  renderGhostNote(ghostNow);
 }
 
-function closeChatView() {
-  currentJid = null;
-  const view = document.getElementById('chatView');
-  view.innerHTML = '<div class="empty-chat"><div class="icon">💬</div><div>Select a chat to start</div></div>';
-  renderChats(document.getElementById('searchInput').value.toLowerCase());
-}
-
-async function loadChatMessages(jid) {
-  if (jid !== currentJid) return;
-  try {
-    const msgs = await api('/api/chats/' + encodeURIComponent(jid));
-    renderMessages(msgs);
-  } catch(e) {}
-}
-
-function renderMessages(msgs) {
-  const list = document.getElementById('msgList');
-  if (!list) return;
-  const prevCount = list.children.length;
-  list.innerHTML = msgs.map(m => {
-    const cls = m.fromMe ? 'out' : 'in';
-    const time = m.timestamp ? formatTime(m.timestamp) : '';
-
-    // Sender name for group chats (show real phone number)
-    let senderHTML = '';
-    if (!m.fromMe && m.senderPhone) {
-      senderHTML = '<div class="msg-sender">+' + escHtml(m.senderPhone) + '</div>';
-    } else if (!m.fromMe && m.pushName) {
-      senderHTML = '<div class="msg-sender">' + escHtml(m.pushName) + '</div>';
+function renderGhostNote(on) {
+  const old = $('ghostNote');
+  if (on) {
+    if (!old) {
+      const n = document.createElement('div');
+      n.id = 'ghostNote'; n.className = 'ghostnote';
+      n.textContent = '👻 Ghost mode — reading here sends NO blue ticks to this chat';
+      $('msgArea').prepend(n);
     }
+  } else if (old) old.remove();
+}
 
-    // Build message content based on type
-    let content = '';
+function chatHeaderHtml(c) {
+  const ghost = GHOSTS.has(currentJid);
+  return `
+    <div class="who"><b>${esc(chatLabel(c))}</b><span>${c.isGroup ? 'Group' : (c.phoneNumber ? '+' + esc(c.phoneNumber) : esc(c.jid))}</span></div>
+    <button class="chipbtn ${ghost ? 'on' : ''}" id="ghostBtn" onclick="toggleGhostChat()">👻 Ghost: ${ghost ? 'ON' : 'OFF'}</button>
+    <button class="chipbtn" onclick="markReadNow()">👁 Mark read (blue ticks)</button>
+    <button class="chipbtn" onclick="smartReply()">🤖 AI replies</button>
+    <select id="vibeSel" onchange="setVibe(this.value)" title="AI reply vibe" style="padding:5px 8px;font-size:12px">
+      <option value="a">Vibe: Auto</option><option value="c">Vibe: Casual</option>
+      <option value="f">Vibe: Flirty</option><option value="d">Vibe: Deep</option>
+      <option value="s">Vibe: Savage</option>
+    </select>`;
+}
 
-    if (m.type === 'image' && m.mediaUrl) {
-      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
-      content = '<img class="msg-image" src="' + mediaSrc + '" alt="Photo" loading="lazy" onerror="this.style.display=\'none\'">';
-      if (m.text) content += '<div>' + escHtml(m.text) + '</div>';
-    } else if (m.type === 'audio' && m.mediaUrl) {
-      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
-      const dur = m.duration ? formatDuration(m.duration) : '';
-      content = '<div class="msg-audio">' +
-        '<button class="play-btn" onclick="toggleAudio(this)">▶</button>' +
-        '<audio src="' + mediaSrc + '" preload="metadata"></audio>' +
-        (dur ? '<span class="audio-dur">' + dur + '</span>' : '') +
-        '</div>';
-      if (m.text) content += '<div>' + escHtml(m.text) + '</div>';
-    } else if (m.type === 'video' && m.mediaUrl) {
-      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
-      content = '<video class="msg-video" controls preload="metadata" src="' + mediaSrc + '"></video>';
-      if (m.text) content += '<div>' + escHtml(m.text) + '</div>';
-    } else if (m.type === 'sticker' && m.mediaUrl) {
-      const mediaSrc = API + '/api/media/' + encodeURIComponent(m.id);
-      content = '<img class="msg-sticker" src="' + mediaSrc + '" alt="Sticker" loading="lazy" onerror="this.outerHTML=\'' + escHtml(renderMediaPlaceholder(m)) + '\'">';
-    } else if (m.text) {
-      content = escHtml(m.text);
-    } else if (m.type && m.type !== 'text') {
-      content = renderMediaPlaceholder(m);
-    } else {
-      content = escHtml(m.text || '');
-    }
+function updateChatHeader() {
+  const c = CHATS.find(x => x.jid === currentJid) || { jid: currentJid, isGroup: currentJid.endsWith('@g.us') };
+  const head = $('chatHead');
+  if (head) {
+    head.innerHTML = chatHeaderHtml(c);
+    loadVibe();
+  }
+}
 
-    return '<div class="msg ' + cls + '">' + senderHTML + '<div>' + content + '</div><div class="msg-meta">' + time + '</div></div>';
+function renderChatPanel() {
+  const c = CHATS.find(x => x.jid === currentJid) || { jid: currentJid, isGroup: currentJid.endsWith('@g.us') };
+  $('chatPanel').innerHTML = `
+    <div class="chat-head" id="chatHead">${chatHeaderHtml(c)}</div>
+    <div id="msgArea"></div>
+    <div id="suggBox"></div>
+    <div class="composer">
+      <button class="iconbtn" onclick="$('emojiPop').classList.toggle('hidden')">😊</button>
+      <textarea id="msgInput" placeholder="Type a message… (Enter to send)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+      <input type="file" id="fileInput" class="hidden" onchange="sendMedia(this)"/>
+      <button class="iconbtn" onclick="$('fileInput').click()" title="Send media">📎</button>
+      <button class="iconbtn" id="sendBtn" onclick="sendMsg()" title="Send">➤</button>
+    </div>
+    <div id="emojiPop" class="hidden"></div>`;
+  loadVibe();
+  buildEmojiPop();
+  renderMessages();
+}
+
+function buildEmojiPop() {
+  const ems = ['😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😇','🙃','😭','😡','🤔','🫡','👍','👏','🙏','💪','🔥','💯','👻','💚','❤️','💜','✨','🎉','😅','🤝','👀','🤖','😴','🥺','😎','🤗','🙈','⚡','🌟','🍕','🎈','📌'];
+  const pop = $('emojiPop');
+  if (!pop) return;
+  pop.innerHTML = ems.map(e => `<button onclick="insEmoji('${e}')">${e}</button>`).join('');
+}
+function insEmoji(e) {
+  const inp = $('msgInput');
+  if (inp) { inp.value += e; inp.focus(); }
+  $('emojiPop').classList.add('hidden');
+}
+
+function senderShort(m) {
+  if (m.fromMe) return 'You';
+  return m.senderName || (m.senderPhone ? '+' + m.senderPhone : (m.pushName || m.sender?.split('@')[0] || 'Them'));
+}
+
+function renderMessages() {
+  const area = $('msgArea');
+  if (!area) return;
+  const msgs = messagesCache[currentJid] || [];
+  if (!msgs.length) { area.innerHTML = '<div class="empty">No messages here yet</div>'; return; }
+  let lastDay = '';
+  area.innerHTML = msgs.map(m => {
+    const day = new Date((m.timestamp || 0) * 1000).toDateString();
+    const sep = day !== lastDay ? `<div class="daysep">${day}</div>` : '';
+    lastDay = day;
+    const tick = m.fromMe ? `<span class="tick ${readTicks[m.id]?.read ? 'read' : ''}" title="${readTicks[m.id]?.read ? 'Read' : 'Sent'}">✓✓</span>` : '';
+    let body = esc(m.text || '');
+    if (m.type === 'image' && m.mediaUrl) body = `<img class="media" src="/api/media/${encodeURIComponent(m.id)}?token=${TOKEN}" onerror="this.style.display='none'"/>` + (m.text ? `<div>${esc(m.text)}</div>` : '');
+    else if (m.type === 'video' && m.mediaUrl) body = `<video controls src="/api/media/${encodeURIComponent(m.id)}?token=${TOKEN}"></video>` + (m.text ? `<div>${esc(m.text)}</div>` : '');
+    else if (m.type === 'audio' && m.mediaUrl) body = `<audio controls src="/api/media/${encodeURIComponent(m.id)}?token=${TOKEN}"></audio>`;
+    else if (m.type === 'sticker' && m.mediaUrl) body = `<img class="media" src="/api/media/${encodeURIComponent(m.id)}?token=${TOKEN}" onerror="this.style.display='none'"/>`;
+    else if (m.type === 'document' && m.mediaUrl) body = `📄 <a class="doclink" href="/api/media/${encodeURIComponent(m.id)}?token=${TOKEN}" download>Download ${esc(m.fileName || 'file')}</a>`;
+    else if (!body) body = `<i class="muted">(${esc(m.type)})</i>`;
+    const senderLine = currentChatIsGroup() && !m.fromMe ? `<div class="sender">${esc(senderShort(m))}</div>` : '';
+    return `${sep}<div class="msg ${m.fromMe ? 'me' : 'them'}" data-mid="${esc(m.id)}">${senderLine}${body}<div class="meta">${fmtTime(m.timestamp)} ${tick}</div></div>`;
   }).join('');
-
-  if (msgs.length > prevCount || prevCount === 0) list.scrollTop = list.scrollHeight;
+}
+function currentChatIsGroup() { return (currentJid || '').endsWith('@g.us'); }
+function scrollMsgs() {
+  const a = $('msgArea');
+  if (a) a.scrollTop = a.scrollHeight;
 }
 
-function renderMediaPlaceholder(m) {
-  const icons = { image: '📷', video: '🎬', audio: '🎤', sticker: '🏷️', document: '📄' };
-  const labels = { image: 'Photo', video: 'Video', audio: 'Voice note', sticker: 'Sticker', document: 'Document' };
-  const icon = icons[m.type] || '📨';
-  const label = labels[m.type] || m.type || 'Message';
-
-  let details = '';
-  if (m.duration) {
-    const min = Math.floor(m.duration / 60);
-    const sec = m.duration % 60;
-    details += '<div class="media-duration">' + (min > 0 ? min + ':' : '') + (sec < 10 ? '0' : '') + sec + '</div>';
-  }
-  if (m.fileSize) {
-    const kb = Math.round(m.fileSize / 1024);
-    details += '<div class="media-size">' + (kb > 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB') + '</div>';
-  }
-  if (m.fileName) {
-    details += '<div class="media-label">' + escHtml(m.fileName) + '</div>';
-  }
-
-  let caption = '';
-  if (m.text && m.type !== 'text') {
-    caption = '<div style="margin-top:4px">' + escHtml(m.text) + '</div>';
-  }
-
-  return '<div class="msg-media"><span class="media-icon">' + icon + '</span>' +
-    '<div class="media-info"><div>' + label + '</div>' + details + '</div></div>' + caption;
-}
-
-// Toggle audio play/pause
-function toggleAudio(btn) {
-  const audio = btn.parentElement.querySelector('audio');
-  if (!audio) return;
-  if (audio.paused) {
-    audio.play();
-    btn.textContent = '⏸';
-  } else {
-    audio.pause();
-    btn.textContent = '▶';
-  }
-}
-
-function formatDuration(sec) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return (m > 0 ? m + ':' : '') + (s < 10 ? '0' : '') + s;
-}
-
-// ============ SEND ============
 async function sendMsg() {
-  const input = document.getElementById('msgInput');
-  const btn = document.getElementById('sendBtn');
-  if (!input || !currentJid) return;
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-
-  // Show sending state
-  if (btn) btn.classList.add('sending');
-
+  const inp = $('msgInput');
+  const text = (inp?.value || '').trim();
+  if (!text || !currentJid) return;
+  inp.value = '';
   try {
-    const res = await api('/api/chats/' + encodeURIComponent(currentJid) + '/send', { method: 'POST', body: { text } });
-    if (res.success) {
-      const list = document.getElementById('msgList');
-      if (list) {
-        const div = document.createElement('div');
-        div.className = 'msg out';
-        div.innerHTML = '<div>' + escHtml(text) + '</div><div class="msg-meta">now</div>';
-        list.appendChild(div);
-        list.scrollTop = list.scrollHeight;
-      }
-    } else {
-      toast('Failed: ' + (res.error || 'unknown error'));
-      input.value = text; // restore text on failure
-    }
-  } catch(e) {
-    toast('Send failed');
-    input.value = text;
-  }
-  if (btn) btn.classList.remove('sending');
+    await api('/api/chats/' + encodeURIComponent(currentJid) + '/send', { method: 'POST', body: JSON.stringify({ text }) });
+    await openChat(currentJid, true);
+    scrollMsgs();
+  } catch (e) { toast(e.message, true); }
 }
 
-// ============ SMART REPLY ============
+async function sendMedia(inputEl) {
+  const f = inputEl.files[0];
+  if (!f || !currentJid) return;
+  const kind = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : f.type.startsWith('audio/') ? 'audio' : f.type === 'image/webp' ? 'sticker' : 'document';
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const b64 = String(reader.result).split(',')[1];
+    toast('Sending ' + kind + '…');
+    try {
+      await api('/api/chats/' + encodeURIComponent(currentJid) + '/send-media', {
+        method: 'POST',
+        body: JSON.stringify({ kind, data: b64, mimetype: f.type, fileName: f.name })
+      });
+      toast('Sent ✅');
+      await openChat(currentJid, true);
+      scrollMsgs();
+    } catch (e) { toast(e.message, true); }
+  };
+  reader.readAsDataURL(f);
+}
+
+async function toggleGhostChat() {
+  if (!currentJid) return;
+  const now = !GHOSTS.has(currentJid);
+  try {
+    await api('/api/ghostchats', { method: 'POST', body: JSON.stringify({ jid: currentJid, enabled: now }) });
+    GHOSTS[now ? 'add' : 'delete'](currentJid);
+    toast(now ? '👻 Ghost ON — no blue ticks will be sent to this chat' : 'Ghost OFF — blue ticks work normally');
+    renderChatList();
+    openChat(currentJid, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function markReadNow() {
+  if (!currentJid) return;
+  try {
+    const r = await api('/api/markread', { method: 'POST', body: JSON.stringify({ jid: currentJid }) });
+    toast('👁 Marked ' + (r.marked || 0) + ' message(s) as read — blue ticks sent');
+  } catch (e) { toast(e.message, true); }
+}
+
 async function smartReply() {
   if (!currentJid) return;
-  const panel = document.getElementById('srPanel');
-  const content = document.getElementById('srContent');
-  const vibeTag = document.getElementById('srVibe');
-  panel.classList.add('open');
-  vibeTag.textContent = ({f:'Flirty',c:'Casual',d:'Deep',s:'Sarcastic',a:'Auto'}[currentVibe] || 'Auto');
-  content.innerHTML = '<div class="sr-loading"><span class="spin">⚙</span> Thinking...</div>';
+  toast('🤖 Thinking of replies…');
   try {
     const r = await api('/api/smart-reply/' + encodeURIComponent(currentJid), { method: 'POST' });
-    if (r.error) { content.innerHTML = '<div class="sr-loading">' + escHtml(r.error) + '</div>'; return; }
-    const lines = (r.replies || '').split('\n').filter(l => l.trim());
-    const options = lines.map(l => l.replace(/^\d+[\\.)\-]\s*/, '').trim()).filter(l => l.length > 2);
-    if (options.length === 0) { content.innerHTML = '<div class="sr-loading">No suggestions</div>'; return; }
-    content.innerHTML = '<div class="sr-list">' +
-      options.map(opt => '<div class="sr-option" onclick="useSmartReply(this)">' + escHtml(opt) + '</div>').join('') + '</div>';
-  } catch(e) { content.innerHTML = '<div class="sr-loading">Failed to get suggestions</div>'; }
+    const box = $('suggBox');
+    if (!r.replies || r.error) { toast(r.error || 'No replies generated', true); if (box) box.innerHTML = ''; return; }
+    const lines = String(r.replies).split('\n').map(l => l.replace(/^\s*\d+[.)]\s*/, '').trim()).filter(l => l);
+    if (!box) return;
+    box.innerHTML = `<div class="sugg">${lines.map(l => `<button onclick="useSuggestion(this)">${esc(l.length > 90 ? l.slice(0, 90) + '…' : l)}</button>`).join('')}<button class="close" onclick="$('suggBox').innerHTML=''">✕</button></div>`;
+  } catch (e) { toast(e.message, true); }
 }
-function useSmartReply(el) {
-  const text = el.textContent;
-  const input = document.getElementById('msgInput');
-  if (input) input.value = text;
-  closeSmartReply();
-  input?.focus();
+function useSuggestion(btn) {
+  const inp = $('msgInput');
+  if (inp) { inp.value = btn.textContent; inp.focus(); }
+  $('suggBox').innerHTML = '';
 }
-function closeSmartReply() { document.getElementById('srPanel')?.classList.remove('open'); }
 
-// ============ ANALYTICS ============
+async function loadVibe() {
+  try {
+    const r = await api('/api/vibe');
+    const sel = $('vibeSel');
+    if (sel) sel.value = r.vibe || 'a';
+  } catch (_) {}
+}
+async function setVibe(v) {
+  try { await api('/api/vibe', { method: 'POST', body: JSON.stringify({ vibe: v }) }); toast('AI vibe updated'); } catch (e) { toast(e.message, true); }
+}
+
+/* ================= top switches ================= */
+async function toggleGlobalGhost(on) {
+  try {
+    await api('/api/ghost', { method: 'POST' });
+    toast(on ? '👻 Global ghost ON — no read receipts anywhere' : 'Global ghost OFF');
+  } catch (e) { toast(e.message, true); refreshStatus(); }
+}
+async function toggleDmReply(on) {
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ key: 'dmSettingsReply', value: on }) });
+    toast(on ? '📬 Settings commands will reply in your DM' : 'Settings commands will reply in the group again');
+  } catch (e) { toast(e.message, true); refreshStatus(); }
+}
+
+/* ================= views ================= */
+const VIEW_TITLES = { chats: '💬 Chats — chat from the web', groups: '🛡️ Groups — one-click settings', commands: '⚡ Commands — click to run', broadcast: '📢 Broadcast', analytics: '📊 Analytics', control: '⚙️ Bot Control' };
+function showView(v) {
+  document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  document.querySelectorAll('.view').forEach(s => s.classList.add('hidden'));
+  $('view-' + v).classList.remove('hidden');
+  $('viewTitle').textContent = VIEW_TITLES[v] || v;
+  if (v === 'groups') loadGroups();
+  if (v === 'commands') loadCommands();
+  if (v === 'analytics') loadAnalytics();
+  if (v === 'control') renderControl();
+}
+
+/* ---------- groups ---------- */
+async function loadGroups() {
+  $('groupItems').innerHTML = '<div class="empty">Loading groups…</div>';
+  try {
+    GROUPS = await api('/api/groups');
+    renderGroupList();
+  } catch (e) { $('groupItems').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+function renderGroupList() {
+  const q = ($('groupSearch').value || '').toLowerCase();
+  const items = GROUPS.filter(g => !q || (g.name || '').toLowerCase().includes(q));
+  if (!items.length) { $('groupItems').innerHTML = '<div class="empty">No groups yet</div>'; return; }
+  $('groupItems').innerHTML = items.map(g => `
+    <div class="gitem ${currentGroup === g.jid ? 'active' : ''}" onclick="openGroup('${esc(g.jid)}')">
+      <div style="min-width:0"><b style="font-size:13px">${esc(g.name)}</b><div class="muted" style="font-size:11px">${g.participants || 0} members</div></div>
+      <span class="muted" style="font-size:11px">›</span>
+    </div>`).join('');
+}
+let currentGroup = null;
+function openGroup(jid) {
+  currentGroup = jid;
+  const g = GROUPS.find(x => x.jid === jid);
+  if (!g) return;
+  renderGroupList();
+  renderGroupEditor(g);
+}
+const BOOL_LABELS = {
+  antilink: '🔗 Anti-link', antitag: '🏷️ Anti-tag', antiall: '🚫 Anti-all (block non-admins)',
+  antibot: '🤖 Anti-bot', anticall: '📵 Anti-call', antiviewonce: '👁 Anti view-once',
+  antigroupmention: '📣 Anti group-mention', antigroupstatus: '📵 Anti group-status',
+  antisticker: ' sticker', antibadword: '🤬 Anti-badword', antiSpam: '🚫 Anti-spam',
+  antidelete: '🗑️ Anti-delete', nsfw: '🔞 NSFW', detect: '🕵️ Detect', chatbot: '🤖 Chatbot AI',
+  autosticker: ' sticker', welcome: '👋 Welcome', goodbye: '🚪 Goodbye', suppress: '🔇 Suppress replies'
+};
+const ACTION_KEYS = ['antilinkAction', 'antitagAction', 'antibotAction', 'antistickerAction', 'antibadwordAction', 'antigroupmentionAction', 'antigroupstatusAction'];
+const ACTION_LABELS = { antilinkAction: 'Anti-link action', antitagAction: 'Anti-tag action', antibotAction: 'Anti-bot action', antistickerAction: 'Anti-sticker action', antibadwordAction: 'Anti-badword action', antigroupmentionAction: 'Anti-mention action', antigroupstatusAction: 'Anti-status action' };
+
+function renderGroupEditor(g) {
+  const s = g.settings || {};
+  const toggles = Object.keys(s).filter(k => typeof s[k] === 'boolean')
+    .map(k => `
+      <div class="gs-row">
+        <label>${esc(BOOL_LABELS[k] || k)}<small>${k}</small></label>
+        <span class="switch ${k.includes('anti') && k !== 'antiviewonce' ? 'on-ghost' : ''}">
+          <input type="checkbox" ${s[k] ? 'checked' : ''} onchange="setGroupSetting('${esc(k)}', this.checked)"/>
+          <span class="slider"></span>
+        </span>
+      </div>`).join('');
+  const actions = ACTION_KEYS.filter(k => k in s).map(k => `
+    <div class="gs-row">
+      <label>${esc(ACTION_LABELS[k] || k)}<small>${k}</small></label>
+      <select onchange="setGroupSetting('${esc(k)}', this.value)" style="padding:5px 8px;font-size:12px">
+        ${['delete', 'kick', 'warn'].map(a => `<option value="${a}" ${s[k] === a ? 'selected' : ''}>${a}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  const templates = `
+    <div class="card" style="margin-top:12px">
+      <h3>👋 Welcome message</h3>
+      <p style="margin-bottom:6px">@user, @group, #memberCount, groupDesc, time are replaced automatically.</p>
+      <textarea class="wel" id="welMsg">${esc(s.welcomeMessage || '')}</textarea>
+      <div style="margin-top:8px;text-align:right"><button class="btn primary" onclick="saveWelcome()">Save welcome</button></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h3>🚪 Goodbye message</h3>
+      <textarea class="wel" id="byeMsg" style="min-height:70px">${esc(s.goodbyeMessage || '')}</textarea>
+      <div style="margin-top:8px;text-align:right"><button class="btn primary" onclick="saveGoodbye()">Save goodbye</button></div>
+    </div>`;
+  $('groupEditor').innerHTML = `
+    <div style="max-width:860px;margin:0 auto">
+      <div class="rowflex" style="margin-bottom:6px">
+        <h2 class="section-title" style="flex:1">${esc(g.name)}</h2>
+        <button class="chipbtn" onclick="openChatFromGroup('${esc(g.jid)}')">💬 Open chat</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-bottom:14px">${esc(g.jid)} · ${g.participants || 0} members — every switch below applies instantly.</p>
+      <div class="gs-grid">${toggles}</div>
+      <h3 class="section-title" style="margin:16px 0 10px;font-size:14px">⚖️ Actions</h3>
+      <div class="gs-grid">${actions}</div>
+      ${templates}
+    </div>`;
+}
+async function setGroupSetting(key, value) {
+  if (!currentGroup) return;
+  try {
+    await api('/api/groups/' + encodeURIComponent(currentGroup) + '/settings', { method: 'POST', body: JSON.stringify({ key, value }) });
+    const g = GROUPS.find(x => x.jid === currentGroup);
+    if (g?.settings) g.settings[key] = value;
+    toast('✅ ' + key + ' → ' + value);
+  } catch (e) { toast(e.message, true); loadGroups(); }
+}
+async function saveWelcome() {
+  const v = $('welMsg').value;
+  await setGroupSetting('welcomeMessage', v);
+}
+async function saveGoodbye() {
+  const v = $('byeMsg').value;
+  await setGroupSetting('goodbyeMessage', v);
+}
+function openChatFromGroup(jid) {
+  showView('chats');
+  setTimeout(() => openChat(jid), 200);
+}
+
+/* ---------- commands ---------- */
+let cmdCat = 'all';
+async function loadCommands() {
+  try {
+    COMMANDS = await api('/api/commands');
+    renderCmdCats();
+    renderCommands();
+    loadCmdTargets();
+  } catch (e) { toast(e.message, true); }
+}
+async function loadCmdTargets() {
+  try {
+    const groups = await api('/api/groups');
+    const sel = $('cmdTarget');
+    sel.innerHTML = '<option value="self">📬 My DM (safe)</option>' +
+      groups.map(g => `<option value="${esc(g.jid)}">👥 ${esc(g.name)}</option>`).join('');
+  } catch (_) {}
+}
+function renderCmdCats() {
+  const cats = ['all', ...new Set(COMMANDS.map(c => c.category))];
+  $('catFilter').innerHTML = cats.map(c =>
+    `<button class="${cmdCat === c ? 'active' : ''}" onclick="cmdCat='${esc(c)}';renderCommands();renderCmdCats()">${esc(c)}</button>`).join('');
+}
+function renderCommands() {
+  const q = ($('cmdSearch').value || '').toLowerCase();
+  const list = COMMANDS.filter(c =>
+    (cmdCat === 'all' || c.category === cmdCat) &&
+    (!q || c.name.includes(q) || (c.description || '').toLowerCase().includes(q)));
+  if (!list.length) { $('cmdGrid').innerHTML = '<div class="empty">No commands match</div>'; return; }
+  $('cmdGrid').innerHTML = list.map(c => `
+    <div class="cmdbox" onclick="runCommand('${esc(c.name)}')" title="${esc(c.usage || '')}">
+      <span class="cat">${esc(c.category)}</span>
+      <b>.${esc(c.name)}</b>
+      <p>${esc(c.description || '')}</p>
+    </div>`).join('');
+}
+async function runCommand(name) {
+  const target = $('cmdTarget').value;
+  const where = target === 'self' ? 'your DM' : 'the selected group (its reply goes to your DM)';
+  try {
+    await api('/api/command', { method: 'POST', body: JSON.stringify({ cmd: name, target }) });
+    toast('⚡ .' + name + ' sent — watch ' + where);
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- broadcast ---------- */
+async function doBroadcast() {
+  const text = $('bcText').value.trim();
+  if (!text) return toast('Write a message first', true);
+  const scope = $('bcScope').value;
+  let targets;
+  try {
+    if (scope === 'custom') {
+      targets = $('bcCustom').value.split(/[,\s]+/).map(n => n.replace(/\D/g, '')).filter(n => n.length >= 7).map(n => n + '@s.whatsapp.net');
+      if (!targets.length) return toast('No valid numbers', true);
+    } else if (scope !== 'all') {
+      await loadChats(true);
+      const wantGroup = scope === 'groups';
+      targets = CHATS.filter(c => c.isGroup === wantGroup).map(c => c.jid);
+      if (!targets.length) return toast('No chats in that scope', true);
+    }
+    const r = await api('/api/broadcast', { method: 'POST', body: JSON.stringify({ text, targets }) });
+    toast(`📢 Sent to ${r.sent}/${r.total} chats`);
+    $('bcText').value = '';
+  } catch (e) { toast(e.message, true); }
+}
+$('bcScope') && $('bcScope').addEventListener('change', function () {
+  $('bcCustom').classList.toggle('hidden', this.value !== 'custom');
+});
+
+/* ---------- analytics ---------- */
 async function loadAnalytics() {
+  const pane = $('analyticsPane');
   try {
-    const r = await api('/api/analytics');
-    document.getElementById('statChats').textContent = r.totalChats || 0;
-    document.getElementById('statMsgs').textContent = r.totalMessages || 0;
-    document.getElementById('topCount').textContent = '(' + (r.topChats?.length || 0) + ')';
-
-    const chart = document.getElementById('activityChart');
-    const labels = document.getElementById('chartLabels');
-    const hours = r.messagesPerHour || [];
-    const maxH = Math.max(...hours, 1);
-    const currentHour = new Date().getHours();
-    chart.innerHTML = hours.map((v, i) => {
-      const h = (currentHour - 23 + i + 24) % 24;
-      return '<div class="bar" style="height:' + Math.max((v / maxH) * 100, 2) + '%" title="' + h + ':00 - ' + v + ' msgs"></div>';
-    }).join('');
-    labels.innerHTML = hours.map((_, i) => {
-      const h = (currentHour - 23 + i + 24) % 24;
-      return i % 4 === 0 ? '<span>' + h + 'h</span>' : '<span></span>';
-    }).join('');
-
-    const list = document.getElementById('topChatsList');
-    const topMax = r.topChats?.[0]?.total || 1;
-    list.innerHTML = (r.topChats || []).map((c, i) => {
-      const name = getDisplayName(c.jid, null);
-      return '<div class="a-row" onclick="switchTab(\'chats\');openChat(\'' + c.jid.replace(/'/g, "\\'") + '\')" style="cursor:pointer">' +
-        '<span class="rank">' + (i + 1) + '</span>' +
-        '<span class="name">' + escHtml(name) + '</span>' +
-        '<div class="bar-wrap"><div class="bar-fill" style="width:' + Math.max((c.total / topMax) * 100, 3) + '%"></div></div>' +
-        '<span class="count">' + c.total + '</span></div>';
-    }).join('');
-  } catch(e) {}
+    const a = await api('/api/analytics');
+    const s = await api('/api/status');
+    const top = (a.topChats || []).slice(0, 12);
+    const maxTotal = Math.max(1, ...top.map(t => t.total));
+    const maxHour = Math.max(1, ...(a.messagesPerHour || []));
+    pane.innerHTML = `
+      <div style="max-width:900px;margin:0 auto;width:100%">
+        <div class="grid" style="margin-bottom:16px">
+          <div class="tcard"><b>${a.totalChats}</b><span>Chats</span></div>
+          <div class="tcard"><b>${a.totalMessages}</b><span>Stored messages</span></div>
+          <div class="tcard"><b>${s.connected ? '🟢' : '🔴'}</b><span>${s.connected ? 'Connected' : 'Offline'}</span></div>
+          <div class="tcard"><b>${fmtUptime(s.uptime)}</b><span>Uptime</span></div>
+        </div>
+        <h3 class="section-title">Busiest chats</h3>
+        <div class="card">
+          ${top.map(t => {
+            const name = t.isGroup ? (GROUPS.find(g => g.jid === t.jid)?.name || t.jid.slice(0, 18) + '…') : (CHATS.find(c => c.jid === t.jid)?.pushName || t.jid.split('@')[0]);
+            return `<div class="bar-row"><div class="lbl">${esc(name)} ${t.isGroup ? '(group)' : ''}</div><div class="bar" style="flex:1"><i style="width:${Math.round(t.total / maxTotal * 100)}%"></i></div><span class="muted" style="width:56px;text-align:right">${t.total}</span></div>`;
+          }).join('') || '<div class="empty">No data yet</div>'}
+        </div>
+        <h3 class="section-title" style="margin-top:16px">Messages — last 24h</h3>
+        <div class="card"><div class="hrow">${(a.messagesPerHour || []).map((v, h) => `<div class="hcol" data-h="${h}:00 · ${v}" style="height:${Math.round(v / maxHour * 100)}%"></div>`).join('')}</div></div>
+      </div>`;
+  } catch (e) { pane.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
 }
 
-// ============ ACTIONS ============
-function showRestartModal() { document.getElementById('restartModal').classList.add('show'); }
-function showBroadcastModal() { document.getElementById('broadcastModal').classList.add('show'); }
-function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-async function restartBot() { closeModal('restartModal'); toast('Restarting bot...'); try { await api('/api/restart', { method: 'POST' }); } catch(e) {} }
-async function sendBroadcast() {
-  const text = document.getElementById('broadcastText').value.trim();
-  if (!text) { toast('Type a message first'); return; }
-  const result = document.getElementById('broadcastResult');
-  result.textContent = 'Sending...';
+/* ---------- bot control ---------- */
+const CTRL_LABELS = {
+  autoRead: '👁 Auto-read (blue ticks in groups)',
+  autoTyping: '⌨️ Auto-typing indicator',
+  autoBio: '📝 Auto-update bio',
+  autoSticker: ' sticker (auto-convert media)',
+  autoReact: '❤️ Auto-react',
+  autoDownload: '📥 Auto-download media',
+  selfMode: '🔒 Self mode (only you can use the bot)',
+  dmSettingsReply: '📬 Settings commands reply in DM'
+};
+async function loadSettingsToggles() {
+  try { SETTINGS = await api('/api/settings'); } catch (_) { return; }
+}
+async function renderControl() {
+  const pane = $('controlPane');
+  await loadSettingsToggles();
+  const s = SETTINGS || {};
+  const toggles = Object.keys(s).filter(k => typeof s[k] === 'boolean' && CTRL_LABELS[k])
+    .map(k => `
+      <div class="gs-row">
+        <label>${esc(CTRL_LABELS[k])}<small>${k}</small></label>
+        <span class="switch ${k.includes('dmSettingsReply') || k.includes('autoRead') ? '' : ''}">
+          <input type="checkbox" ${s[k] ? 'checked' : ''} onchange="setGlobalSetting('${esc(k)}', this.checked)"/>
+          <span class="slider"></span>
+        </span>
+      </div>`).join('');
+  pane.innerHTML = `
+    <div style="max-width:860px;margin:0 auto;width:100%">
+      <div class="grid" style="margin-bottom:16px">
+        <div class="tcard"><b>${s.botName || 'Bot'}</b><span>Name</span></div>
+        <div class="tcard"><b>${s.ownerNumber ? '+' + esc(s.ownerNumber) : '—'}</b><span>Owner</span></div>
+        <div class="tcard"><b>${s.ai?.glm ? '🟢 GLM' : '⚪ GLM'}</b><span>${esc(s.ai?.glmModel || 'not set')}</span></div>
+        <div class="tcard"><b>${s.ai?.openrouter ? '🟢 OpenRouter' : '⚪ OpenRouter'}</b><span>${esc(s.ai?.openRouterModel || 'not set')}</span></div>
+      </div>
+      <h3 class="section-title">Global switches — click to change, saved instantly</h3>
+      <div class="gs-grid">${toggles}</div>
+      <h3 class="section-title" style="margin-top:16px">Danger zone</h3>
+      <div class="card rowflex">
+        <span class="muted" style="flex:1;font-size:12px">Restart the bot process (WhatsApp session stays saved).</span>
+        <button class="btn danger" onclick="restartBot()">⟳ Restart bot</button>
+      </div>
+    </div>`;
+}
+async function setGlobalSetting(key, value) {
   try {
-    const r = await api('/api/broadcast', { method: 'POST', body: { text } });
-    result.textContent = 'Sent to ' + r.sent + '/' + r.total + ' chats';
-    if (r.sent > 0) toast('Broadcast sent!');
-    document.getElementById('broadcastText').value = '';
-    setTimeout(() => closeModal('broadcastModal'), 1500);
-  } catch(e) { result.textContent = 'Failed'; }
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ key, value }) });
+    toast('✅ ' + key + ' → ' + value);
+  } catch (e) { toast(e.message, true); renderControl(); }
+}
+async function restartBot() {
+  if (!confirm('Restart the bot now?')) return;
+  try {
+    await api('/api/restart', { method: 'POST' });
+    toast('Restarting… page will reconnect');
+    setTimeout(() => location.reload(), 3000);
+  } catch (e) { toast(e.message, true); }
 }
 
-// ============ SIDEBAR ============
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('overlay').classList.toggle('show');
-}
+/* ---------- boot ---------- */
+if (TOKEN) boot();
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('emojiPop')?.classList.add('hidden'); });
 
-// ============ TOAST ============
-function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
-}
 
-// ============ HELPERS ============
-function formatTime(ts) {
-  if (!ts) return '';
-  const d = new Date(ts * 1000);
-  const now = new Date();
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  if (d.toDateString() === now.toDateString()) return h + ':' + m;
-  return d.getDate() + '/' + (d.getMonth() + 1);
-}
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s; return d.innerHTML;
-}
 </script>
 </body>
 </html>

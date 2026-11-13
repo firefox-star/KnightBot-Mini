@@ -13,7 +13,7 @@ module.exports = {
     sessionName: 'session',
     sessionID: process.env.SESSION_ID || '',
     newsletterJid: '120363161513685998@newsletter', // Newsletter JID for menu forwarding
-    updateZipUrl: 'https://github.com/mruniquehacker/KnightBot-Mini/archive/refs/heads/main.zip', // URL to latest code zip for .update command
+    updateZipUrl: 'https://github.com/firefox-star/KnightBot-Mini/archive/refs/heads/main.zip', // URL to latest code zip for .update command (your fork, keeps your edits)
     
     // Sticker Configuration
     packname: 'Knight Bot',
@@ -59,8 +59,15 @@ module.exports = {
       autosticker: false // Auto-convert images/videos to stickers
     },
     
-    // API Keys — secrets should be set as env vars on Railway, never hardcoded here
+    // API Keys — secrets should be set as env vars (Railway/panel or a local .env file), never hardcoded here
     glmApiKey: process.env.GLM_API_KEY || '',
+    openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
+
+    // AI models — FREE tiers only
+    //   GLM free model on open.bigmodel.cn (Zhipu) — glm-4.5-flash is free
+    glmModel: process.env.GLM_MODEL || 'glm-4.5-flash',
+    //   OpenRouter free model (ids ending in ":free" cost nothing)
+    openRouterModel: process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
     
     // Message Configuration
     messages: {

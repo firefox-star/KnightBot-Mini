@@ -38,7 +38,7 @@ async function chat(messages, options = {}) {
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		try {
 			const response = await axios.post(GLM_URL, {
-				model: options.model || 'glm-4-plus',
+				model: options.model || process.env.GLM_MODEL || 'glm-4.5-flash', // glm-4.5-flash = FREE tier on Zhipu
 				messages,
 				temperature: options.temperature ?? 0.85,
 				max_tokens: options.maxTokens || 1024

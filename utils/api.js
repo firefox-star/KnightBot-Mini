@@ -25,8 +25,52 @@ const APIs = {
     }
   },
   
-  // AI Chat - Shizo API
+  // AI Chat — free providers only, with automatic fallback:
+  //   1) Zhipu GLM (GLM_API_KEY, free model glm-4.5-flash)
+  //   2) OpenRouter (OPENROUTER_API_KEY, free ":free" model)
+  //   3) shizo.top public endpoint (last resort)
   chatAI: async (text) => {
+    // 1) GLM free model
+    const glmKey = process.env.GLM_API_KEY || '';
+    if (glmKey) {
+      try {
+        const r = await api.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+          model: process.env.GLM_MODEL || 'glm-4.5-flash',
+          messages: [{ role: 'user', content: String(text) }],
+          temperature: 0.85,
+          max_tokens: 1024
+        }, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${glmKey}` },
+          timeout: 45000
+        });
+        const out = r.data?.choices?.[0]?.message?.content;
+        if (out && String(out).trim()) return { msg: String(out).trim() };
+      } catch (_) { /* fall through to next provider */ }
+    }
+
+    // 2) OpenRouter free model
+    const orKey = process.env.OPENROUTER_API_KEY || '';
+    if (orKey) {
+      try {
+        const r = await api.post('https://openrouter.ai/api/v1/chat/completions', {
+          model: process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
+          messages: [{ role: 'user', content: String(text) }],
+          max_tokens: 1024
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${orKey}`,
+            'HTTP-Referer': 'https://github.com/firefox-star/KnightBot-Mini',
+            'X-Title': 'KnightBot-Mini'
+          },
+          timeout: 60000
+        });
+        const out = r.data?.choices?.[0]?.message?.content;
+        if (out && String(out).trim()) return { msg: String(out).trim() };
+      } catch (_) { /* fall through to last resort */ }
+    }
+
+    // 3) shizo public endpoint (last resort)
     try {
       const response = await api.get(`https://api.shizo.top/ai/gpt?apikey=shizo&query=${encodeURIComponent(text)}`);
       if (response.data && response.data.msg) {
@@ -34,7 +78,7 @@ const APIs = {
       }
       return response.data;
     } catch (error) {
-      throw new Error('Failed to get AI response');
+      throw new Error('Failed to get AI response (all providers failed)');
     }
   },
   
